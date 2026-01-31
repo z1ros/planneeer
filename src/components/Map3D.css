@@ -1,0 +1,769 @@
+.map-wrapper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a2030;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure mapbox fills container */
+.map-container .mapboxgl-map {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Hide default Mapbox controls - we use custom overlay */
+.map-wrapper .mapboxgl-ctrl-top-right {
+  display: none;
+}
+
+.map-wrapper .mapboxgl-ctrl-bottom-left {
+  display: none;
+}
+
+.map-wrapper .mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-attrib {
+  display: none;
+}
+
+/* ============================================
+   EXPAND MAP TOGGLE
+   ============================================ */
+.expand-map-btn {
+  position: absolute;
+  top: 16px;
+  right: 60px;
+  /* Offset from Mapbox nav controls */
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(10, 10, 15, 0.85);
+  border: 1px solid rgba(0, 243, 255, 0.3);
+  border-radius: 8px;
+  color: #00f3ff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: all 0.25s ease;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 243, 255, 0.1);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.expand-map-btn .btn-label {
+  letter-spacing: 0.5px;
+}
+
+.expand-map-btn:hover {
+  background: rgba(0, 243, 255, 0.15);
+  border-color: rgba(0, 243, 255, 0.6);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(0, 243, 255, 0.25);
+  transform: scale(1.03);
+}
+
+.expand-map-btn:active {
+  transform: scale(0.98);
+}
+
+.expand-map-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   BACK TO WPI BUTTON - Always visible
+   ============================================ */
+.back-to-wpi-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(128, 39, 108, 0.9);
+  border: 1px solid rgba(128, 39, 108, 0.6);
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: all 0.25s ease;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(128, 39, 108, 0.2);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.back-to-wpi-btn:hover {
+  background: rgba(128, 39, 108, 1);
+  border-color: rgba(180, 80, 150, 0.8);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(128, 39, 108, 0.4);
+  transform: scale(1.03);
+}
+
+.back-to-wpi-btn:active {
+  transform: scale(0.98);
+}
+
+.back-to-wpi-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   EXPANDED FULLSCREEN STATE
+   ============================================ */
+.map-wrapper.expanded {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 1000;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.map-wrapper.expanded .expand-map-btn {
+  background: rgba(255, 61, 0, 0.15);
+  border-color: rgba(255, 61, 0, 0.5);
+  color: #ff3d00;
+}
+
+.map-wrapper.expanded .expand-map-btn:hover {
+  background: rgba(255, 61, 0, 0.25);
+  border-color: rgba(255, 61, 0, 0.7);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(255, 61, 0, 0.25);
+}
+
+/* ============================================
+   AR DASHBOARD - Clean Professional Style
+   ============================================ */
+.ar-dashboard {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 16px 20px;
+  min-width: 280px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(20px);
+  z-index: 100;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #1a2030;
+  text-transform: uppercase;
+}
+
+.dashboard-time {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-stats {
+  display: flex;
+  gap: 24px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a2030;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.stat.status .stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Status colors */
+.ar-dashboard.flowing .stat.status .stat-value {
+  background: rgba(0, 212, 170, 0.15);
+  color: #00a080;
+}
+
+.ar-dashboard.normal .stat.status .stat-value {
+  background: rgba(74, 144, 226, 0.15);
+  color: #3a7bc8;
+}
+
+.ar-dashboard.slow .stat.status .stat-value {
+  background: rgba(255, 179, 71, 0.2);
+  color: #d48c00;
+}
+
+.ar-dashboard.congested .stat.status .stat-value {
+  background: rgba(255, 107, 53, 0.15);
+  color: #e05a2b;
+}
+
+/* ============================================
+   NAVIGATION BUTTONS - AR Style
+   ============================================ */
+.nav-buttons.ar-style {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 100;
+}
+
+.nav-buttons.ar-style .nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #1a2030;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+}
+
+.nav-buttons.ar-style .nav-btn:hover {
+  background: #ffffff;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.nav-buttons.ar-style .nav-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.nav-buttons.ar-style .btn-icon {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.nav-buttons.ar-style .btn-label {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+.nav-buttons.ar-style .nav-btn.boston {
+  border-color: rgba(218, 41, 28, 0.2);
+}
+
+.nav-buttons.ar-style .nav-btn.boston:hover {
+  background: rgba(218, 41, 28, 0.08);
+  border-color: rgba(218, 41, 28, 0.3);
+}
+
+.nav-buttons.ar-style .nav-btn.boston .btn-icon {
+  color: #DA291C;
+}
+
+.nav-buttons.ar-style .nav-btn.worcester {
+  border-color: rgba(128, 39, 108, 0.2);
+}
+
+.nav-buttons.ar-style .nav-btn.worcester:hover {
+  background: rgba(128, 39, 108, 0.08);
+  border-color: rgba(128, 39, 108, 0.3);
+}
+
+.nav-buttons.ar-style .nav-btn.worcester .btn-icon {
+  color: #80276C;
+}
+
+/* ============================================
+   MAPBOX CONTROL OVERRIDES - Clean Style
+   ============================================ */
+.mapboxgl-ctrl-group {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.08) !important;
+  overflow: hidden;
+}
+
+.mapboxgl-ctrl-group button {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  transition: background 0.15s ease !important;
+}
+
+.mapboxgl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.mapboxgl-ctrl-group button:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+.mapboxgl-ctrl-group button span {
+  opacity: 0.6 !important;
+  transition: opacity 0.15s ease !important;
+}
+
+.mapboxgl-ctrl-group button:hover span {
+  opacity: 0.9 !important;
+}
+
+.mapboxgl-ctrl-attrib {
+  background: rgba(255, 255, 255, 0.8) !important;
+  color: #666 !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(5px) !important;
+}
+
+.mapboxgl-ctrl-attrib a {
+  color: #444 !important;
+}
+
+/* ============================================
+   POPUP STYLING - Clean Data Cards
+   ============================================ */
+.mapboxgl-popup-content {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-radius: 12px !important;
+  color: #1a2030 !important;
+  padding: 12px 16px !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.place-popup-container .mapboxgl-popup-content {
+  padding: 0 !important;
+  overflow: hidden;
+  min-width: 280px;
+  max-width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+}
+
+.popup-photo {
+  width: 100%;
+  height: 140px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%);
+  border-radius: 12px 12px 0 0;
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.popup-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+.popup-photo-placeholder {
+  width: 100%;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px 12px 0 0;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+}
+
+.landmark-popup-container .mapboxgl-popup-content {
+  padding: 0 !important;
+  overflow: hidden;
+  min-width: 280px;
+  max-width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.15) !important;
+}
+
+.landmark-popup {
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.place-popup {
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.place-popup>div:not(.popup-photo) {
+  padding: 12px 16px;
+  flex: 1;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.mapboxgl-popup-close-button {
+  color: #666 !important;
+  font-size: 20px !important;
+  padding: 8px 12px !important;
+  transition: all 0.15s ease !important;
+  background: transparent !important;
+  border-radius: 6px !important;
+  right: 8px !important;
+  top: 8px !important;
+  z-index: 10;
+}
+
+.mapboxgl-popup-close-button:hover {
+  color: #1a2030 !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ============================================
+   LOADING STATE
+   ============================================ */
+.map-container.loading::after {
+  content: 'Loading satellite imagery...';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+@media (max-width: 768px) {
+  .ar-dashboard {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    min-width: auto;
+    padding: 12px 16px;
+  }
+
+  .dashboard-stats {
+    gap: 16px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .stat.status .stat-value {
+    font-size: 12px;
+  }
+
+  .nav-buttons.ar-style {
+    bottom: 16px;
+    gap: 6px;
+  }
+
+  .nav-buttons.ar-style .nav-btn {
+    padding: 8px 14px;
+  }
+
+  .nav-buttons.ar-style .btn-label {
+    font-size: 11px;
+  }
+}
+
+/* ============================================
+   DARK MODE SUPPORT (optional)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  .ar-dashboard {
+    background: rgba(30, 35, 45, 0.95);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .dashboard-title,
+  .stat-value {
+    color: #ffffff;
+  }
+
+  .dashboard-time,
+  .stat-label {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .dashboard-header {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .nav-buttons.ar-style .nav-btn {
+    background: rgba(30, 35, 45, 0.95);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+  }
+
+  .nav-buttons.ar-style .nav-btn:hover {
+    background: rgba(40, 45, 55, 0.98);
+  }
+}
+
+/* ============================================
+   LEGACY SUPPORT - Old stress indicator
+   ============================================ */
+.stress-indicator {
+  display: none;
+  /* Hidden in AR mode */
+}
+
+.nav-buttons:not(.ar-style) {
+  display: none;
+  /* Hidden old style */
+}
+
+/* ============================================
+   LAYER TOGGLE CONTROLS
+   ============================================ */
+.layer-toggle-controls {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  background: rgba(10, 10, 15, 0.85);
+  border: 1px solid rgba(0, 243, 255, 0.3);
+  border-radius: 10px;
+  padding: 6px;
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 243, 255, 0.1);
+}
+
+.layer-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.layer-toggle-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 0.25s ease;
+}
+
+.layer-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.layer-toggle-btn:hover svg {
+  opacity: 1;
+}
+
+.layer-toggle-btn.active {
+  background: rgba(0, 243, 255, 0.15);
+  border-color: rgba(0, 243, 255, 0.5);
+  color: #00f3ff;
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+}
+
+.layer-toggle-btn.active svg {
+  opacity: 1;
+}
+
+.layer-toggle-btn:active {
+  transform: scale(0.96);
+}
+
+/* ============================================
+   VIEW MODE CONTROLS (2D/3D, Satellite)
+   ============================================ */
+.view-mode-controls {
+  position: absolute;
+  top: 150px;
+  right: 10px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.view-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 80px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  color: #1a2030;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.view-mode-btn svg {
+  stroke: currentColor;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.view-mode-btn:hover {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.view-mode-btn:hover svg {
+  opacity: 0.9;
+}
+
+.view-mode-btn.active {
+  background: rgba(0, 122, 255, 0.1);
+  border-color: rgba(0, 122, 255, 0.3);
+  color: #007AFF;
+  box-shadow:
+    0 2px 8px rgba(0, 122, 255, 0.2),
+    0 1px 2px rgba(0, 122, 255, 0.1);
+}
+
+.view-mode-btn.active svg {
+  opacity: 1;
+}
+
+.view-mode-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .layer-toggle-controls {
+    top: 12px;
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .layer-toggle-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .layer-toggle-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .view-mode-controls {
+    top: 100px;
+    right: 8px;
+  }
+
+  .view-mode-btn {
+    width: 70px;
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+}

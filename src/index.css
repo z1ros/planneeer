@@ -1,0 +1,207 @@
+@import "tailwindcss";
+
+/* Global base styles */
+html, body, #root {
+  @apply m-0 p-0 w-full h-full;
+}
+
+/* Map marker animations */
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Itinerary marker styles */
+.itinerary-marker {
+  @apply z-10;
+  transition: opacity 0.15s ease-out;
+}
+
+/* When map is moving, markers get slightly more transparent */
+.map-moving .itinerary-marker {
+  opacity: 0.85;
+}
+
+/* When map stops, markers fade back in */
+.map-idle .itinerary-marker {
+  opacity: 1;
+}
+
+/* Hover effect on inner content to avoid position shift */
+.itinerary-marker > div {
+  transition: transform 0.15s ease-out;
+  transform-origin: bottom center;
+}
+
+.itinerary-marker:hover {
+  @apply z-20;
+}
+
+.itinerary-marker:hover > div {
+  transform: scale(1.1);
+}
+
+/* Marker container */
+.marker-container {
+  @apply flex flex-col items-center cursor-pointer;
+}
+
+/* User location marker */
+.user-location-marker {
+  @apply relative w-6 h-6;
+}
+
+.user-location-pulse {
+  @apply absolute inset-0 rounded-full opacity-30;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.user-location-dot {
+  @apply absolute inset-1 rounded-full border-[3px] border-white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Pin marker */
+.pin-marker {
+  @apply relative;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+}
+
+.pin-shape {
+  @apply w-10 h-12 flex items-center justify-center pb-2 border-[3px] border-white;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+
+.pin-icon {
+  @apply text-white text-base;
+}
+
+.pin-point {
+  @apply absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+
+.pin-badge {
+  @apply absolute -top-2 -right-2 w-[22px] h-[22px] bg-white rounded-full flex items-center justify-center text-[11px] font-bold font-sans border-2;
+}
+
+
+/* Popup styles */
+.popup-content {
+  @apply font-sans p-3 px-4 min-w-[180px];
+}
+
+.popup-header {
+  @apply flex items-center gap-2.5 mb-2;
+}
+
+.popup-icon-wrapper {
+  @apply w-9 h-9 rounded-[10px] flex items-center justify-center;
+}
+
+.popup-icon {
+  @apply text-white text-sm;
+}
+
+.popup-title {
+  @apply font-semibold text-sm text-gray-800;
+}
+
+.popup-description {
+  @apply text-xs text-gray-500;
+}
+
+.popup-duration {
+  @apply flex items-center gap-1.5 pt-2 border-t border-gray-200 text-xs text-gray-500;
+}
+
+.popup-duration-icon {
+  @apply text-[10px];
+}
+
+/* Custom Mapbox Popup Styling - Light */
+.mapboxgl-popup.custom-popup {
+  @apply z-100;
+}
+
+.mapboxgl-popup.custom-popup .mapboxgl-popup-content {
+  @apply p-0 rounded-xl shadow-xl border border-black/5 overflow-hidden;
+  animation: popupFadeIn 0.2s ease-out;
+}
+
+.mapboxgl-popup.custom-popup .mapboxgl-popup-close-button {
+  @apply text-lg text-gray-400 p-2 px-3 right-0 top-0 transition-colors duration-150;
+}
+
+.mapboxgl-popup.custom-popup .mapboxgl-popup-close-button:hover {
+  @apply text-gray-700 bg-transparent;
+}
+
+.mapboxgl-popup.custom-popup .mapboxgl-popup-tip {
+  border-top-color: white;
+}
+
+/* Custom Mapbox Popup Styling - Dark Theme */
+.mapboxgl-popup.custom-popup-dark {
+  @apply z-100;
+}
+
+.mapboxgl-popup.custom-popup-dark .mapboxgl-popup-content {
+  @apply p-0 shadow-none border-none overflow-visible;
+  background: transparent !important;
+  background-color: transparent !important;
+  animation: popupFadeIn 0.25s ease-out;
+}
+
+.mapboxgl-popup.custom-popup-dark .mapboxgl-popup-tip {
+  display: none !important;
+  border: none !important;
+}
+
+/* Full-screen map layout */
+.app-fullscreen {
+  @apply relative w-full h-full overflow-hidden;
+}
+
+.app-fullscreen > div:first-child {
+  @apply absolute inset-0 w-full h-full;
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Z-index utility */
+.z-100 {
+  z-index: 100;
+}
