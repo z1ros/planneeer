@@ -61,38 +61,44 @@ export async function fetchEvents(): Promise<CityEvent[]> {
     const response = await fetch(`${API_BASE_URL}/api/nyc/events`);
     if (!response.ok) throw new Error(`API error: ${response.status}`);
 
-    const data: NYCEvent[] = await response.json();
+    const data: any[] = await response.json();
 
-    // Convert NYC format to CityEvent format for compatibility
-    return data.map(e => ({
-      _id: e._id,
-      id: e.event_id,
-      title: e.name,
-      description: e.vibe_metadata?.description || '',
-      start_time: (() => {
-        // HACK: Force all events to appear as "Today" for demo
-        const now = new Date();
-        const start = new Date(e.timing?.startDate || now.toISOString());
-        start.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
-        return start.toISOString();
-      })(),
-      end_time: (() => {
-        const now = new Date();
-        const end = new Date(e.timing?.endDate || now.toISOString());
-        end.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
-        return end.toISOString();
-      })(),
-      venue: {
-        name: e.location?.venue || e.location?.neighborhood || 'NYC',
-        lng: e.location?.coordinates?.[0] || -73.9855,
-        lat: e.location?.coordinates?.[1] || 40.7580,
-        address: `${e.location?.neighborhood || ''}, ${e.location?.borough || ''}`
-      },
-      categories: e.vibe_metadata?.tags || [e.event_type],
-      price: e.price || 'TBD',
-      source: e.source,
-      source_url: e.source_url,
-    }));
+    // Convert events to CityEvent format - handle both venue and location formats
+    return data.map(e => {
+      // Try to get coordinates from venue first, then location
+      let lat = 0, lng = 0, venueName = 'NYC';
+
+      if (e.venue) {
+        // Format: { venue: { lat, lng, name } } or { venue: { latitude, longitude, name } }
+        lat = e.venue.lat || e.venue.latitude || 0;
+        lng = e.venue.lng || e.venue.longitude || 0;
+        venueName = e.venue.name || e.venue.address || 'NYC';
+      } else if (e.location?.coordinates) {
+        // Format: { location: { coordinates: [lng, lat] } }
+        lng = e.location.coordinates[0] || 0;
+        lat = e.location.coordinates[1] || 0;
+        venueName = e.location.venue || e.location.neighborhood || 'NYC';
+      }
+
+      return {
+        _id: e._id,
+        id: e.id || e.event_id || e._id,
+        title: e.title || e.name || 'Event',
+        description: e.description || e.vibe_metadata?.description || '',
+        start_time: e.start_time || e.timing?.startDate || new Date().toISOString(),
+        end_time: e.end_time || e.timing?.endDate || new Date().toISOString(),
+        venue: {
+          name: venueName,
+          lat: lat,
+          lng: lng,
+          address: e.venue?.address || ''
+        },
+        categories: e.categories || e.vibe_metadata?.tags || [],
+        price: e.price || 'TBD',
+        source: e.source,
+        source_url: e.source_url,
+      };
+    }).filter(e => e.venue.lat !== 0 && e.venue.lng !== 0); // Only return events with valid coordinates
   } catch (error) {
     console.error('Failed to fetch NYC events:', error);
     return [];

@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import Map3D from './components/Map3D';
+import Map3D, { LayerType } from './components/Map3D';
 import MapErrorBoundary from './components/MapErrorBoundary';
 import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, BudgetData } from './components/map-overlay';
 import WelcomeScreen from './components/WelcomeScreen';
 import LoadingScreen from './components/LoadingScreen';
 import { ItineraryEvent } from './types';
-import { getSmartPlan, SmartPlanResponse, PlanData } from './services/plannerApi';
+import { getSmartPlan, performSearch, buildDetailedItinerary, createItineraryFromQuery, isItineraryQuery, SmartPlanResponse, PlanData, SearchResponse, SearchResult, SearchType, DetailedItinerary, DetailedStop } from './services/plannerApi';
+import { speak, speakAIResponse } from './services/speechService';
 import './App.css';
 import './styles/industrial.css';
 
@@ -44,22 +45,23 @@ function eventToOverlayItem(event: ItineraryEvent, index: number): ItineraryItem
     landmark: { icon: 'fa-landmark', iconBg: '#ef4444' },
     transit: { icon: 'fa-train-subway', iconBg: '#3b82f6' },
     attraction: { icon: 'fa-star', iconBg: '#f97316' },
+    food: { icon: 'fa-utensils', iconBg: '#ec4899' },
   };
 
-  const config = typeConfig[event.type] || typeConfig.attraction;
+  const config = typeConfig[event.category] || typeConfig.attraction;
 
   return {
     id: event.id,
-    type: event.type as ItineraryItem['type'],
+    type: event.category as ItineraryItem['type'],
     name: event.name,
     duration: event.duration ? `${event.duration} min` : undefined,
-    price: event.price ? `$${event.price}` : undefined,
+    price: event.eventData?.price ? `$${event.eventData.price}` : undefined,
     icon: config.icon,
     iconBg: config.iconBg,
-    address: event.address,
-    description: event.description,
-    rating: event.rating,
-    tags: event.tags,
+    address: event.eventData?.venue?.name || '',
+    description: event.vibe,
+    rating: undefined, // Fixed: ItineraryEvent doesn't have rating in the current interface
+    tags: event.eventData?.categories || [],
   };
 }
 
@@ -69,7 +71,7 @@ function MainLayout() {
     <div className="app-fullscreen relative">
       {/* Main Content Area - Changes based on route */}
       <Outlet />
-      
+
       {/* Left Sidebar - Always visible, on top with z-index */}
       <div className="absolute inset-0 pointer-events-none z-50">
         <LeftSidebar />
@@ -904,9 +906,15 @@ function MapPage() {
 
   const [itineraryEvents, setItineraryEvents] = useState<ItineraryEvent[]>([]);
 
+  // Saved items for manual itinerary building
+  const [savedItems, setSavedItems] = useState<ItineraryItem[]>([]);
+  const [isBuildingItinerary, setIsBuildingItinerary] = useState(false);
+  const [detailedItinerary, setDetailedItinerary] = useState<DetailedItinerary | null>(null);
+
   // Smart planner state
   const [isSearching, setIsSearching] = useState(false);
   const [plans, setPlans] = useState<{ A: PlanData; B: PlanData } | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
   const [activePlan, setActivePlan] = useState<'A' | 'B'>('A');
   const [totalBudgetAmount, setTotalBudgetAmount] = useState<number | null>(null); // No default - only set when user specifies
   const [budget, setBudget] = useState<BudgetData>(defaultBudget);
@@ -918,6 +926,9 @@ function MapPage() {
   } | null>(null);
 
   const [itineraryRouteData, setItineraryRouteData] = useState<any>(null);
+
+  // Active map layer state - controls which category to filter search results by
+  const [activeLayer, setActiveLayer] = useState<LayerType>(null);
 
   // User location - default to 200 W 26th St, NYC (Flatiron District)
   const [userLocation] = useState<{ lat: number; lng: number; address: string }>({
@@ -933,76 +944,301 @@ function MapPage() {
     }
   }, []);
 
-  // Smart search handler - calls the vector search + AI planner API
+  // Vector search handler - calls the new semantic search endpoint
+  // Filters by active layer type (restaurants, events, landmarks) when one is selected
+  // Check if query is a conversational question that needs a spoken response
+  const isConversationalQuery = (query: string): boolean => {
+    const conversationalPatterns = [
+      /^(what|where|how|which|can you|could you|tell me|suggest|recommend)/i,
+      /hidden (places|spots|gems)/i,
+      /best (places|spots|things)/i,
+      /how (do i|to) get to/i,
+      /directions to/i,
+      /what should i/i,
+      /where should i/i
+    ];
+    return conversationalPatterns.some(pattern => pattern.test(query.trim()));
+  };
+
   const handleSearch = useCallback(async (query: string) => {
-    console.log('[App] Search query:', query);
+    // If query is empty, clear search results and show all
+    if (!query || query.trim() === '') {
+      setSearchResults(null);
+      setPlans(null);
+      setItineraryRouteData(null);
+      setDetailedItinerary(null);
+      return;
+    }
+
     setIsSearching(true);
+    setPlans(null);
+    setItineraryRouteData(null);
 
     try {
-      const response = await getSmartPlan({ 
-        query,
-        userLocation: { lat: userLocation.lat, lng: userLocation.lng }
-      });
-      console.log('[App] Smart plan response:', response);
-
-      // Store both plans
-      setPlans(response.plans);
-
-      // Set the parsed budget if available
-      if (response.parsedBudget) {
-        setTotalBudgetAmount(response.parsedBudget);
-      }
-
-      // Update budget from active plan
-      const currentPlan = response.plans[activePlan];
-      setBudget(currentPlan.budget);
-
-      // Build route data for map - collect all coordinates from itinerary items
-      const routePoints: Array<{ lat: number; lng: number; name: string; type: string }> = [];
-      
-      // Start with user location
-      routePoints.push({
-        lat: userLocation.lat,
-        lng: userLocation.lng,
-        name: 'Your Location',
-        type: 'start'
-      });
-
-      // Add each itinerary item that has coordinates
-      for (const item of currentPlan.items) {
-        if (item.coordinates && item.coordinates.lat && item.coordinates.lng) {
-          routePoints.push({
-            lat: item.coordinates.lat,
-            lng: item.coordinates.lng,
-            name: item.name,
-            type: item.type
-          });
-        }
-      }
-
-      console.log('[App] Route points:', routePoints);
-      
-      // Set route data for map
-      if (routePoints.length > 1) {
-        setItineraryRouteData({
-          points: routePoints,
-          timestamp: Date.now()
+      // Check if this is a conversational query that should get a spoken response
+      if (isConversationalQuery(query) && !isItineraryQuery(query)) {
+        console.log('[App] Detected conversational query, getting AI response:', query);
+        
+        // Get AI response and speak it
+        const response = await speakAIResponse(query);
+        console.log('[App] AI spoke:', response?.substring(0, 50) + '...');
+        
+        // Also do a search to show results on map
+        const searchType: SearchType = activeLayer === 'restaurants' || activeLayer === 'events' || activeLayer === 'landmarks'
+          ? activeLayer
+          : null;
+        const searchResponse = await performSearch(query, 15, searchType);
+        setSearchResults(searchResponse);
+        setDetailedItinerary(null);
+        
+      } else if (isItineraryQuery(query)) {
+        // Check if this looks like an itinerary request
+        console.log('[App] Detected itinerary query, creating plan:', query);
+        setSearchResults(null);
+        setDetailedItinerary(null);
+        
+        const response = await createItineraryFromQuery(query, {
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          address: userLocation.address
         });
-      }
+        
+        if (response.success && response.itinerary) {
+          setDetailedItinerary(response.itinerary);
+          setBudget(response.budget);
+          
+          // Speak a summary of the itinerary
+          speak(`I've created an itinerary for you: ${response.itinerary.title}. ${response.itinerary.overview} Click the speaker icon to hear the full details.`);
+          
+          // Set route on map
+          const routePoints = [
+            { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
+            ...response.itinerary.stops
+              .filter(stop => stop.coordinates)
+              .map(stop => ({
+                lat: stop.coordinates!.lat,
+                lng: stop.coordinates!.lng,
+                name: stop.name,
+                type: stop.type
+              }))
+          ];
+          
+          if (routePoints.length >= 2) {
+            setItineraryRouteData({ points: routePoints });
+          }
+          
+          console.log('[App] Itinerary created:', response.itinerary.title);
+        }
+      } else {
+        // Regular search
+        const searchType: SearchType = activeLayer === 'restaurants' || activeLayer === 'events' || activeLayer === 'landmarks'
+          ? activeLayer
+          : null;
 
+        console.log('[App] Performing vector search:', query, '| Filter:', searchType || 'all');
+        setDetailedItinerary(null);
+        
+        const response = await performSearch(query, 30, searchType);
+        console.log('[App] Search results:', response);
+        setSearchResults(response);
+      }
     } catch (error) {
-      console.error('[App] Search failed:', error);
+      console.error('[App] Search/Itinerary failed:', error);
     } finally {
       setIsSearching(false);
     }
-  }, [activePlan, userLocation]);
+  }, [activeLayer, userLocation]);
+
+  // Clear search results - exposed for clearing from search bar
+  const handleClearSearch = useCallback(() => {
+    setSearchResults(null);
+  }, []);
+
+  // Add item to saved itinerary list
+  const handleAddToItinerary = useCallback((item: {
+    id: string;
+    name: string;
+    type: 'restaurant' | 'event' | 'landmark';
+    description?: string;
+    address?: string;
+    price?: string;
+    rating?: number;
+    coordinates?: { lat: number; lng: number };
+    category?: string;
+  }) => {
+    setSavedItems(prev => {
+      // Check if item already exists
+      if (prev.some(i => i.id === item.id)) {
+        console.log('[App] Item already in itinerary:', item.name);
+        return prev;
+      }
+      
+      // Map type to icon and category
+      const typeMap = {
+        restaurant: { icon: 'fa-utensils', iconBg: 'bg-orange-500', category: 'food' as const },
+        event: { icon: 'fa-calendar-star', iconBg: 'bg-purple-500', category: 'activity' as const },
+        landmark: { icon: 'fa-landmark', iconBg: 'bg-blue-500', category: 'activity' as const }
+      };
+      
+      const config = typeMap[item.type] || typeMap.landmark;
+      
+      const newItem: ItineraryItem = {
+        id: item.id,
+        name: item.name,
+        type: item.type === 'restaurant' ? 'food' : item.type === 'event' ? 'event' : 'landmark',
+        description: item.description,
+        address: item.address,
+        price: item.price,
+        priceRange: item.price,
+        rating: item.rating,
+        icon: config.icon,
+        iconBg: config.iconBg,
+        category: config.category,
+        coordinates: item.coordinates,
+        tags: item.category ? [item.category] : []
+      };
+      
+      console.log('[App] Added to itinerary:', item.name);
+      return [...prev, newItem];
+    });
+  }, []);
+
+  // Remove item from saved itinerary
+  const handleRemoveFromItinerary = useCallback((itemId: string) => {
+    setSavedItems(prev => prev.filter(item => item.id !== itemId));
+  }, []);
+
+  // Clear all saved items
+  const handleClearSavedItems = useCallback(() => {
+    setSavedItems([]);
+  }, []);
+
+  // Build detailed itinerary from saved items using Gemini
+  const handleBuildItinerary = useCallback(async () => {
+    if (savedItems.length === 0) return;
+    
+    setIsBuildingItinerary(true);
+    
+    try {
+      const itemNames = savedItems.map(item => item.name).join(', ');
+      console.log('[App] Building detailed itinerary for:', itemNames);
+      
+      // Prepare items for the detailed itinerary builder
+      const itemsForApi = savedItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        type: item.type,
+        description: item.description,
+        address: item.address,
+        price: item.price || item.priceRange,
+        coordinates: item.coordinates,
+        lat: item.coordinates?.lat,
+        lng: item.coordinates?.lng
+      }));
+      
+      const response = await buildDetailedItinerary({
+        items: itemsForApi,
+        userLocation: {
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          address: userLocation.address
+        }
+      });
+      
+      if (response.success && response.itinerary) {
+        // Store the detailed itinerary
+        setDetailedItinerary(response.itinerary);
+        
+        // Update budget
+        setBudget(response.budget);
+        
+        // Set route data for map from detailed itinerary stops
+        // Map expects "points" array with {lat, lng, name, type} format
+        const routePoints = [
+          // Start with user location
+          { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
+          // Then all the itinerary stops
+          ...response.itinerary.stops
+            .filter(stop => stop.coordinates)
+            .map(stop => ({
+              lat: stop.coordinates!.lat,
+              lng: stop.coordinates!.lng,
+              name: stop.name,
+              type: stop.type
+            }))
+        ];
+        
+        console.log('[App] Setting itinerary route with', routePoints.length, 'points');
+        
+        if (routePoints.length >= 2) {
+          setItineraryRouteData({
+            points: routePoints
+          });
+        }
+        
+        // Clear saved items since they're now in the itinerary
+        setSavedItems([]);
+        
+        console.log('[App] Detailed itinerary built:', response.itinerary.title);
+      }
+    } catch (error) {
+      console.error('[App] Failed to build itinerary:', error);
+    } finally {
+      setIsBuildingItinerary(false);
+    }
+  }, [savedItems, userLocation]);
+
+  // Final itinerary generation handler
+  const generateItinerary = useCallback(async () => {
+    if (!searchResults || searchResults.features.length === 0) return;
+
+    // For now, we use the original query from metadata to generate the plan
+    // In a future version, we could pass the specific selected IDs
+    const query = searchResults.metadata.query;
+    console.log('[App] Generating smart plan for query:', query);
+    setIsSearching(true);
+
+    try {
+      const response = await getSmartPlan({
+        query,
+        userLocation: { lat: userLocation.lat, lng: userLocation.lng }
+      });
+      console.log('[App] Smart plan generated:', response);
+
+      setPlans(response.plans);
+      if (response.parsedBudget) setTotalBudgetAmount(response.parsedBudget);
+      setBudget(response.plans[activePlan].budget);
+
+      // Build route as before
+      const currentPlan = response.plans[activePlan];
+      const routePoints: Array<{ lat: number; lng: number; name: string; type: string }> = [];
+      routePoints.push({ lat: userLocation.lat, lng: userLocation.lng, name: 'Your Location', type: 'start' });
+
+      for (const item of currentPlan.items) {
+        if (item.coordinates && item.coordinates.lat && item.coordinates.lng) {
+          routePoints.push({ lat: item.coordinates.lat, lng: item.coordinates.lng, name: item.name, type: item.type });
+        }
+      }
+
+      if (routePoints.length > 1) {
+        setItineraryRouteData({ points: routePoints, timestamp: Date.now() });
+      }
+
+      // Optionally clear search results once plan is active
+      // setSearchResults(null);
+    } catch (error) {
+      console.error('[App] Plan generation failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchResults, userLocation, activePlan]);
 
   // Handle plan switching
   const handlePlanChange = useCallback((plan: 'A' | 'B') => {
     setActivePlan(plan);
     if (plans) {
       setBudget(plans[plan].budget);
-      
+
       // Update route for new plan
       const routePoints: Array<{ lat: number; lng: number; name: string; type: string }> = [];
       routePoints.push({
@@ -1042,8 +1278,8 @@ function MapPage() {
   }, []);
 
   // State for real route duration and segments
-  const [routeInfo, setRouteInfo] = useState<{ 
-    totalDuration: number; 
+  const [routeInfo, setRouteInfo] = useState<{
+    totalDuration: number;
     segments: Array<{ mode: string; duration: number }>;
     walkToStation?: number;
     subwayDuration?: number;
@@ -1053,12 +1289,12 @@ function MapPage() {
   // Callback when route is calculated
   const handleRouteCalculated = useCallback((info: { totalDuration: number; segments: Array<{ mode: string; duration: number }> }) => {
     console.log('[App] Route calculated - received:', info);
-    
+
     // Parse segments to get walking and transit times
     let walkToStation = 0;
     let subwayDuration = 0;
     let walkFromStation = 0;
-    
+
     info.segments.forEach((seg, idx) => {
       console.log(`[App] Segment ${idx}: mode=${seg.mode}, duration=${seg.duration} min`);
       if (seg.mode === 'walking') {
@@ -1071,14 +1307,14 @@ function MapPage() {
         subwayDuration = seg.duration;
       }
     });
-    
+
     const routeData = {
       ...info,
       walkToStation,
       subwayDuration,
       walkFromStation
     };
-    
+
     console.log('[App] Setting routeInfo:', routeData);
     setRouteInfo(routeData);
   }, []);
@@ -1101,7 +1337,12 @@ function MapPage() {
           selectedLocation={selectedLocation}
           mapCommand={mapCommand}
           itineraryRouteData={itineraryRouteData}
+          searchResults={searchResults}
           onRouteCalculated={handleRouteCalculated}
+          activeLayer={activeLayer}
+          onActiveLayerChange={setActiveLayer}
+          onAddToItinerary={handleAddToItinerary}
+          savedItemIds={savedItems.map(i => i.id)}
         />
       </MapErrorBoundary>
 
@@ -1114,13 +1355,36 @@ function MapPage() {
           onItemClick={handleItemClick}
           activePlan={activePlan}
           onPlanChange={handlePlanChange}
-          isLoading={isSearching}
+          isLoading={isSearching || isBuildingItinerary}
           routeInfo={routeInfo}
+          savedItems={savedItems}
+          onRemoveSavedItem={handleRemoveFromItinerary}
+          onClearSavedItems={handleClearSavedItems}
+          onBuildItinerary={handleBuildItinerary}
+          detailedItinerary={detailedItinerary}
+          onClearDetailedItinerary={() => {
+            setDetailedItinerary(null);
+            setItineraryRouteData(null);
+          }}
         />
         <BottomSearchBar
           onSearch={handleSearch}
           onVoiceClick={handleVoiceClick}
+          activeLayer={activeLayer}
         />
+
+        {/* Create Plan Button Overlay - Only visible when search results exist but no plan yet */}
+        {searchResults && !plans && !isSearching && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-auto">
+            <button
+              onClick={generateItinerary}
+              className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold py-4 px-10 rounded-full shadow-[0_8px_32px_rgba(249,115,22,0.4)] flex items-center gap-3 transition-all transform hover:scale-105 active:scale-95 border border-white/20 backdrop-blur-md group"
+            >
+              <i className="fa-solid fa-wand-magic-sparkles group-hover:rotate-12 transition-transform"></i>
+              <span>Create Smart Itinerary</span>
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

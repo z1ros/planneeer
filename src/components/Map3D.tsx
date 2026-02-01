@@ -9,11 +9,14 @@ import { fetchLandmarks, landmarksToGeoJSON } from '../services/landmarksApi';
 import { fetchNYCRestaurants, nycRestaurantsToGeoJSON } from '../services/restaurantApi';
 import { fetchEvents, eventsToGeoJSON } from '../services/eventsApi';
 import { fetchAllMTAFeeds, MTAEntity, fetchLineStatuses, LineStatusMap } from '../services/mtaApi';
+import { SearchResponse } from '../services/plannerApi';
 import './Map3D.css';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || "";
+
+export type LayerType = 'transit' | 'restaurants' | 'events' | 'landmarks' | null;
 
 interface Map3DProps {
   settings: CitySettings;
@@ -24,7 +27,22 @@ interface Map3DProps {
     timestamp: number;
   } | null;
   itineraryRouteData?: any;
+  searchResults?: SearchResponse | null;
   onRouteCalculated?: (routeInfo: { totalDuration: number; segments: Array<{ mode: string; duration: number }> }) => void;
+  activeLayer?: LayerType;
+  onActiveLayerChange?: (layer: LayerType) => void;
+  onAddToItinerary?: (item: {
+    id: string;
+    name: string;
+    type: 'restaurant' | 'event' | 'landmark';
+    description?: string;
+    address?: string;
+    price?: string;
+    rating?: number;
+    coordinates?: { lat: number; lng: number };
+    category?: string;
+  }) => void;
+  savedItemIds?: string[];
 }
 
 // New York City center (Times Square)
@@ -146,7 +164,7 @@ function generatePlaceInsightHTML(place: any): string {
   </div>`;
 }
 
-export default function Map3D({ settings, selectedLocation, mapCommand, itineraryRouteData, onRouteCalculated }: Map3DProps) {
+export default function Map3D({ settings, selectedLocation, mapCommand, itineraryRouteData, searchResults, onRouteCalculated, activeLayer: externalActiveLayer, onActiveLayerChange, onAddToItinerary, savedItemIds = [] }: Map3DProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -214,11 +232,52 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
   const [isLoaded, setIsLoaded] = useState(false);
   // MBTA state removed
 
+  // Ref to store savedItemIds for popup access
+  const savedItemIdsRef = useRef<string[]>(savedItemIds);
+  useEffect(() => {
+    savedItemIdsRef.current = savedItemIds;
+  }, [savedItemIds]);
+
+  // Set up global function for popup "Add to Itinerary" buttons
+  useEffect(() => {
+    if (onAddToItinerary) {
+      (window as any).addToItinerary = (id: string, name: string, type: string, description: string, address: string, price: string, lat: number, lng: number) => {
+        onAddToItinerary({
+          id,
+          name,
+          type: type as 'restaurant' | 'event' | 'landmark',
+          description,
+          address,
+          price,
+          coordinates: { lat, lng }
+        });
+      };
+      // Also expose a function to check if item is saved
+      (window as any).isItemSaved = (id: string) => savedItemIdsRef.current.includes(id);
+    }
+    return () => {
+      delete (window as any).addToItinerary;
+      delete (window as any).isItemSaved;
+    };
+  }, [onAddToItinerary]);
+
   const [systemStress, setSystemStress] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeLayer, setActiveLayer] = useState<'transit' | 'restaurants' | 'events' | 'landmarks' | null>(null);
+  const [internalActiveLayer, setInternalActiveLayer] = useState<LayerType>(null);
+
+  // Use external activeLayer if provided, otherwise use internal state
+  const activeLayer = externalActiveLayer !== undefined ? externalActiveLayer : internalActiveLayer;
+  const setActiveLayer = (layer: LayerType) => {
+    if (onActiveLayerChange) {
+      onActiveLayerChange(layer);
+    } else {
+      setInternalActiveLayer(layer);
+    }
+  };
+
   const [is3DMode, setIs3DMode] = useState(true);
-  
+  const [activeSearchMarkers, setActiveSearchMarkers] = useState<mapboxgl.Marker[]>([]);
+
   // Derived state from activeLayer for compatibility
   const showPlaces = activeLayer === 'restaurants';
   const showTransitLayers = activeLayer === 'transit';
@@ -833,7 +892,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               
               ${props.description ? `<div style="margin: 14px 0; padding: 12px; background: #fafafa; border-radius: 6px; border-left: 3px solid #000;">
                 <div style="font-size: 13px; color: #1a1a1a; line-height: 1.6; font-weight: 500;">
-                  ${props.description.substring(0, 150)}${props.description.length > 150 ? '...' : ''}
+                  ${props.description}
                 </div>
               </div>` : ''}
               
@@ -844,11 +903,18 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 <span style="display: inline-block; padding: 4px 10px; background: #f0f0f0; color: #000; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px;">FREE EVENT</span>
               </div>` : ''}
               
-              ${props.sourceUrl ? `<div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e5e7eb;">
-                <a href="${props.sourceUrl}" target="_blank" style="display: block; text-align: center; padding: 11px 16px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; transition: all 0.2s; letter-spacing: 0.5px;">
-                  View Details
-                </a>
-              </div>` : ''}
+              <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e5e7eb; display: flex; gap: 8px;">
+                <button 
+                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.title || '').replace(/'/g, "\\'")}', 'event', '${(props.description || '').replace(/'/g, "\\'")}', '${(props.venueName || '').replace(/'/g, "\\'")}', '${props.price || ''}', ${coordinates[1]}, ${coordinates[0]})"
+                  style="flex: 1; text-align: center; padding: 11px 16px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s;"
+                  ${savedItemIdsRef.current.includes(props.id) ? 'disabled style="flex: 1; text-align: center; padding: 11px 16px; background: #22c55e; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: default;"' : ''}
+                >
+                  ${savedItemIdsRef.current.includes(props.id) ? '✓ Added' : '+ Add to Itinerary'}
+                </button>
+                ${props.sourceUrl ? `<a href="${props.sourceUrl}" target="_blank" style="padding: 11px 16px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700;">
+                  Details
+                </a>` : ''}
+              </div>
             </div>
           </div>
         `;
@@ -1020,7 +1086,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-opacity': 1,
         },
       });
-      
+
       // Transit center line (white stripe for subway look)
       mapInstance.addLayer({
         id: 'itinerary-transit-center',
@@ -1042,7 +1108,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
       // ITINERARY STOP MARKERS - Clean Modern Pin Style
       // ===========================================
-      
+
       // Drop shadow
       mapInstance.addLayer({
         id: 'itinerary-stops-glow',
@@ -1485,17 +1551,26 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 </div>
               ` : ''}
               
-              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb; display: flex; gap: 8px;">
-                <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
-                   target="_blank" 
-                   style="flex: 1; text-align: center; padding: 10px 14px; background: #8b5cf6; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; transition: all 0.2s; letter-spacing: 0.3px;">
-                  Get Directions
-                </a>
-                <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC landmark')}" 
-                   target="_blank" 
-                   style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #8b5cf6; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; border: 2px solid #8b5cf6; transition: all 0.2s; letter-spacing: 0.3px;">
-                  Learn More
-                </a>
+              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb;">
+                <button 
+                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', 'landmark', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '', ${lat}, ${lng})"
+                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #8b5cf6, #7c3aed)'}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 8px;"
+                  ${savedItemIdsRef.current.includes(props.id) ? 'disabled' : ''}
+                >
+                  ${savedItemIdsRef.current.includes(props.id) ? '✓ Added to Itinerary' : '+ Add to Itinerary'}
+                </button>
+                <div style="display: flex; gap: 8px;">
+                  <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #8b5cf6; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                    Directions
+                  </a>
+                  <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC landmark')}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #8b5cf6; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700; border: 2px solid #8b5cf6;">
+                    Learn More
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -1654,17 +1729,26 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               
               ${insightHTML}
               
-              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb; display: flex; gap: 8px;">
-                <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
-                   target="_blank" 
-                   style="flex: 1; text-align: center; padding: 10px 14px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; transition: all 0.2s; letter-spacing: 0.3px;">
-                  Directions
-                </a>
-                <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC')}" 
-                   target="_blank" 
-                   style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #000; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; border: 2px solid #000; transition: all 0.2s; letter-spacing: 0.3px;">
-                  More Info
-                </a>
+              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb;">
+                <button 
+                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', 'restaurant', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '${props.priceRange || ''}', ${lat}, ${lng})"
+                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #f97316, #ea580c)'}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 8px;"
+                  ${savedItemIdsRef.current.includes(props.id) ? 'disabled' : ''}
+                >
+                  ${savedItemIdsRef.current.includes(props.id) ? '✓ Added to Itinerary' : '+ Add to Itinerary'}
+                </button>
+                <div style="display: flex; gap: 8px;">
+                  <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                    Directions
+                  </a>
+                  <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC')}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #000; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700; border: 2px solid #000;">
+                    More Info
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -2274,10 +2358,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     }
   }, [userLocation, isLoaded]);
 
-  // Place visibility toggle
+  // Check if search results are active (hide base layers when searching)
+  const hasSearchResults = searchResults && searchResults.features && searchResults.features.length > 0;
+
+  // Place visibility toggle - HIDE when search results are shown
   useEffect(() => {
     if (!map.current || !isLoaded) return;
-    const vis = showPlaces ? 'visible' : 'none';
+    // Hide base layer if search results are active
+    const vis = (showPlaces && !hasSearchResults) ? 'visible' : 'none';
     const layers = [
       'places-glow',
       'places-marker',
@@ -2296,12 +2384,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         console.error(`[Places] Error setting visibility for ${layer}:`, error);
       }
     });
-  }, [showPlaces, isLoaded]);
+  }, [showPlaces, isLoaded, hasSearchResults]);
 
-  // Events visibility toggle
+  // Events visibility toggle - HIDE when search results are shown
   useEffect(() => {
     if (!map.current || !isLoaded) return;
-    const vis = showEvents ? 'visible' : 'none';
+    // Hide base layer if search results are active
+    const vis = (showEvents && !hasSearchResults) ? 'visible' : 'none';
     const layers = [
       'events-glow',
       'events-marker',
@@ -2320,12 +2409,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         console.error(`[Events] Error setting visibility for ${layer}:`, error);
       }
     });
-  }, [showEvents, isLoaded]);
+  }, [showEvents, isLoaded, hasSearchResults]);
 
-  // Landmarks visibility toggle
+  // Landmarks visibility toggle - HIDE when search results are shown
   useEffect(() => {
     if (!map.current || !isLoaded) return;
-    const vis = showLandmarks ? 'visible' : 'none';
+    // Hide base layer if search results are active
+    const vis = (showLandmarks && !hasSearchResults) ? 'visible' : 'none';
     const layers = [
       'landmarks-glow',
       'landmarks-marker',
@@ -2344,7 +2434,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         console.error(`[Landmarks] Error setting visibility for ${layer}:`, error);
       }
     });
-  }, [showLandmarks, isLoaded]);
+  }, [showLandmarks, isLoaded, hasSearchResults]);
 
   // Itinerary visualization
   useEffect(() => {
@@ -2420,9 +2510,9 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     // Handle simple points format from smart planner
     if (itineraryRouteData.points && Array.isArray(itineraryRouteData.points)) {
       console.log('[Itinerary] Rendering route with', itineraryRouteData.points.length, 'points');
-      
+
       const points = itineraryRouteData.points;
-      
+
       // Build stop features - map types to layer-compatible types
       const typeMapping: { [key: string]: string } = {
         'start': 'hotel',      // User location - gold
@@ -2431,7 +2521,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         'event': 'activity',   // Events - blue
         'transit': 'activity'  // Transit - blue
       };
-      
+
       const stopFeatures = points.map((point: any, index: number) => ({
         type: 'Feature' as const,
         geometry: {
@@ -2456,12 +2546,12 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       }
 
       // Show stop layers immediately - including new glow and highlight layers
-      ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon', 
-       'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
-        if (mapInstance.getLayer(layer)) {
-          mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
-        }
-      });
+      ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon',
+        'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
+          if (mapInstance.getLayer(layer)) {
+            mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
+          }
+        });
 
       // Fit map to show all points
       if (points.length > 1) {
@@ -2476,10 +2566,10 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // Fetch real directions - uses walking + subway for long distances
       const fetchDirections = async () => {
         if (points.length < 2) return;
-        
+
         const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
         const allRouteFeatures: any[] = [];
-        
+
         // NYC Subway stations data (imported from nycSubwayStations.json)
         const subwayStations = [
           { name: "Times Sq-42 St", routes: "1237NQRS", lng: -73.9867, lat: 40.7559 },
@@ -2499,7 +2589,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           { name: "Lorimer St", routes: "LG", lng: -73.9502, lat: 40.7140 },
           { name: "Marcy Av", routes: "JMZ", lng: -73.9579, lat: 40.7083 },
         ];
-        
+
         // Subway line colors
         const lineColors: { [key: string]: string } = {
           '1': '#EE352E', '2': '#EE352E', '3': '#EE352E',
@@ -2513,7 +2603,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'N': '#FCCC0A', 'Q': '#FCCC0A', 'R': '#FCCC0A', 'W': '#FCCC0A',
           'S': '#808183'
         };
-        
+
         // Calculate distance between two points (in meters)
         const getDistance = (p1: any, p2: any) => {
           const R = 6371000;
@@ -2521,13 +2611,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           const lat2 = p2.lat * Math.PI / 180;
           const dLat = (p2.lat - p1.lat) * Math.PI / 180;
           const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(lat1) * Math.cos(lat2) *
-                    Math.sin(dLng/2) * Math.sin(dLng/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           return R * c;
         };
-        
+
         // Find nearest subway station
         const findNearestStation = (point: any) => {
           let nearest = subwayStations[0];
@@ -2541,7 +2631,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           }
           return { station: nearest, distance: minDist };
         };
-        
+
         // Get walking directions
         const getWalkingRoute = async (from: any, to: any) => {
           const waypoints = `${from.lng},${from.lat};${to.lng},${to.lat}`;
@@ -2554,20 +2644,20 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           }
           return null;
         };
-        
+
         try {
           for (let i = 0; i < points.length - 1; i++) {
             const from = points[i];
             const to = points[i + 1];
             const directDistance = getDistance(from, to);
-            
+
             // If distance > 1.5km, use subway
             if (directDistance > 1500) {
               const fromStation = findNearestStation(from);
               const toStation = findNearestStation(to);
-              
+
               console.log(`[Itinerary] Subway route: ${from.name} → ${fromStation.station.name} → ${toStation.station.name} → ${to.name}`);
-              
+
               // 1. Walk to station
               const walkToStation = await getWalkingRoute(from, fromStation.station);
               if (walkToStation) {
@@ -2578,13 +2668,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                   properties: { mode: 'walking', routeColor: '#10b981', duration: walkToStation.duration }
                 });
               }
-              
+
               // 2. Subway segment (straight line between stations with subway color)
               const subwayLine = fromStation.station.routes[0]; // First available line
               const subwayColor = lineColors[subwayLine] || '#3b82f6';
               const subwayDist = getDistance(fromStation.station, toStation.station);
               const subwayMin = Math.round(subwayDist / 500); // ~500m per minute on subway
-              
+
               allRouteFeatures.push({
                 type: 'Feature',
                 geometry: {
@@ -2594,14 +2684,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                     [toStation.station.lng, toStation.station.lat]
                   ]
                 },
-                properties: { 
-                  mode: 'transit', 
-                  routeColor: subwayColor, 
+                properties: {
+                  mode: 'transit',
+                  routeColor: subwayColor,
                   duration: subwayMin * 60,
                   line: subwayLine
                 }
               });
-              
+
               // 3. Walk from station to destination
               const walkFromStation = await getWalkingRoute(toStation.station, to);
               if (walkFromStation) {
@@ -2611,7 +2701,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                   properties: { mode: 'walking', routeColor: '#10b981', duration: walkFromStation.duration }
                 });
               }
-              
+
             } else {
               // Short distance - just walk
               const walkRoute = await getWalkingRoute(from, to);
@@ -2624,21 +2714,21 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               }
             }
           }
-          
+
           // Calculate totals
           const totalDuration = allRouteFeatures.reduce((sum, f) => sum + (f.properties.duration || 0), 0);
           const totalMin = Math.round(totalDuration / 60);
           console.log('[Itinerary] Total trip:', totalMin, 'min');
-          
+
           // Callback with route info to update sidebar
           const segments = allRouteFeatures.map(f => ({
             mode: f.properties.mode,
             duration: Math.round((f.properties.duration || 0) / 60)
           }));
-          
+
           console.log('[Itinerary] Route segments:', segments);
           console.log('[Itinerary] onRouteCalculated callback exists:', !!onRouteCalculated);
-          
+
           if (onRouteCalculated) {
             onRouteCalculated({
               totalDuration: totalMin,
@@ -2646,7 +2736,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             });
             console.log('[Itinerary] Callback called with:', { totalDuration: totalMin, segments });
           }
-          
+
           // Set route data
           if (mapInstance.getSource('itinerary-routes')) {
             (mapInstance.getSource('itinerary-routes') as mapboxgl.GeoJSONSource).setData({
@@ -2654,21 +2744,21 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               features: allRouteFeatures
             });
           }
-          
+
           // Show route layers
           ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit', 'itinerary-transit-center'].forEach(layer => {
             if (mapInstance.getLayer(layer)) {
               mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
             }
           });
-          
+
           console.log('[Itinerary] Smart transit route rendered!');
-          
+
         } catch (error) {
           console.error('[Itinerary] Route error:', error);
         }
       };
-      
+
       fetchDirections();
       setShowItinerary(true);
       return;
@@ -3028,6 +3118,218 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       });
     }
   }, [itineraryRouteData, selectedItineraryDay, isLoaded, onRouteCalculated]);
+
+  // Handle Search Results Markers
+  useEffect(() => {
+    if (!map.current || !isLoaded) return;
+    const mapInstance = map.current;
+
+    // Clear existing markers
+    activeSearchMarkers.forEach(m => m.remove());
+    setActiveSearchMarkers([]);
+
+    // If we have an active itinerary, don't show search markers
+    if (itineraryRouteData) return;
+
+    if (!searchResults || !searchResults.features || searchResults.features.length === 0) return;
+
+    console.log('[Map3D] Displaying', searchResults.features.length, 'search markers');
+    const newMarkers: mapboxgl.Marker[] = [];
+    const bounds = new mapboxgl.LngLatBounds();
+
+    searchResults.features.forEach((feature) => {
+      const coords = feature.geometry.coordinates as [number, number];
+      const props = feature.properties;
+      const [lng, lat] = coords;
+
+      // Create a custom element for the marker
+      const el = document.createElement('div');
+      el.className = `search-marker search-marker-${props.type}`;
+      el.style.width = '32px';
+      el.style.height = '32px';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.borderRadius = '50%';
+      el.style.border = '2px solid white';
+      el.style.cursor = 'pointer';
+      el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+
+      const typeColors: Record<string, string> = {
+        restaurant: '#ec4899',
+        event: '#8b5cf6',
+        landmark: '#ef4444'
+      };
+      el.style.backgroundColor = typeColors[props.type] || '#3b82f6';
+
+      const typeIcons: Record<string, string> = {
+        restaurant: '🍴',
+        event: '📅',
+        landmark: '🏛️'
+      };
+      el.innerHTML = `<span style="font-size: 16px;">${typeIcons[props.type] || '📍'}</span>`;
+
+      // Add click handler for rich popup with photo fetching
+      el.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        
+        const itemType = props.type === 'restaurant' ? 'restaurant' : props.type === 'event' ? 'event' : 'landmark';
+        const typeLabel = props.type === 'restaurant' ? 'Restaurant' : props.type === 'event' ? 'Event' : 'Landmark';
+        const typeBgColor = props.type === 'restaurant' ? '#ec4899' : props.type === 'event' ? '#8b5cf6' : '#ef4444';
+        
+        // Show loading popup first
+        const loadingPopup = new mapboxgl.Popup({ maxWidth: '320px', className: 'search-popup-container' })
+          .setLngLat([lng, lat])
+          .setHTML(`
+            <div style="padding: 20px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+              <h3 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 700; color: #000;">${props.name}</h3>
+              <div style="color: #666;">Loading details...</div>
+            </div>
+          `)
+          .addTo(mapInstance);
+
+        // Try to fetch photo from Google Places API
+        let photoUrl = '';
+        let googleRating = props.rating || 0;
+        let googleAddress = props.address || '';
+
+        if (GOOGLE_MAPS_API_KEY) {
+          try {
+            const searchQuery = encodeURIComponent(`${props.name} NYC`);
+            const findPlaceUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${searchQuery}&inputtype=textquery&fields=place_id,photos,rating,formatted_address&key=${GOOGLE_MAPS_API_KEY}`;
+            
+            const proxyUrl = `${API_BASE_URL}/api/proxy/places?url=${encodeURIComponent(findPlaceUrl)}`;
+            const response = await fetch(proxyUrl);
+            const data = await response.json();
+            
+            if (data.candidates && data.candidates[0]) {
+              const place = data.candidates[0];
+              if (place.photos && place.photos[0]) {
+                photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${GOOGLE_MAPS_API_KEY}`;
+              }
+              if (place.rating) googleRating = place.rating;
+              if (place.formatted_address) googleAddress = place.formatted_address;
+            }
+          } catch (err) {
+            console.log('[Search Popup] Photo fetch failed:', err);
+          }
+        }
+
+        const rating = googleRating;
+        const address = googleAddress || props.address || 'NYC';
+        const description = props.description || '';
+        const isAlreadySaved = savedItemIdsRef.current.includes(props.id);
+
+        // Generate star rating
+        const fullStars = Math.floor(rating);
+        const hasHalfStar = rating % 1 >= 0.5;
+        let starsHTML = '';
+        for (let i = 0; i < 5; i++) {
+          if (i < fullStars) starsHTML += '★';
+          else if (i === fullStars && hasHalfStar) starsHTML += '½';
+          else starsHTML += '☆';
+        }
+
+        // Build popup HTML
+        const popupHTML = `
+          <div class="search-popup" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+            ${photoUrl ? `
+              <div style="width: 100%; height: 140px; background: linear-gradient(135deg, ${typeBgColor}40 0%, ${typeBgColor}20 100%); border-radius: 8px 8px 0 0; margin: -16px -16px 12px -16px; position: relative; overflow: hidden;">
+                <img src="${photoUrl}" alt="${props.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.parentElement.style.display='none';" />
+                ${rating > 0 ? `<div style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.95); padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 700;">
+                  <span style="color: #f59e0b;">${starsHTML}</span> ${rating.toFixed(1)}
+                </div>` : ''}
+              </div>
+            ` : ''}
+            
+            <div style="padding: ${photoUrl ? '0' : '0'};">
+              <div style="display: inline-block; padding: 4px 10px; background: ${typeBgColor}; color: #fff; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">
+                ${typeLabel}
+              </div>
+              
+              <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #000; line-height: 1.3;">
+                ${props.name}
+              </h3>
+              
+              ${!photoUrl && rating > 0 ? `
+                <div style="margin: 8px 0; display: flex; align-items: center; gap: 8px;">
+                  <span style="color: #f59e0b;">${starsHTML}</span>
+                  <span style="font-size: 14px; font-weight: 700;">${rating.toFixed(1)}</span>
+                </div>
+              ` : ''}
+              
+              <div style="margin: 8px 0; display: flex; align-items: start; gap: 8px;">
+                <span style="font-size: 14px;">📍</span>
+                <span style="font-size: 13px; color: #4a4a4a; line-height: 1.4;">${address}</span>
+              </div>
+              
+              ${description ? `
+                <div style="margin: 10px 0; font-size: 13px; color: #4a4a4a; line-height: 1.5;">
+                  ${description}
+                </div>
+              ` : ''}
+              
+              ${props.category ? `
+                <div style="margin: 10px 0;">
+                  <span style="display: inline-block; padding: 4px 10px; background: #f3f4f6; border-radius: 4px; font-size: 11px; color: #374151; font-weight: 600;">${props.category}</span>
+                  ${props.price ? `<span style="margin-left: 8px; font-size: 13px; color: #059669; font-weight: 600;">${props.price}</span>` : ''}
+                </div>
+              ` : ''}
+              
+              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb;">
+                <button 
+                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', '${itemType}', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '${props.price || ''}', ${lat}, ${lng})"
+                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${isAlreadySaved ? '#22c55e' : `linear-gradient(135deg, ${typeBgColor}, ${typeBgColor}dd)`}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: ${isAlreadySaved ? 'default' : 'pointer'}; margin-bottom: 8px;"
+                  ${isAlreadySaved ? 'disabled' : ''}
+                >
+                  ${isAlreadySaved ? '✓ Added to Itinerary' : '+ Add to Itinerary'}
+                </button>
+                <div style="display: flex; gap: 8px;">
+                  <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700;">
+                    Directions
+                  </a>
+                  <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC')}" 
+                     target="_blank" 
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #000; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700; border: 2px solid #000;">
+                    More Info
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Remove loading popup and show final popup
+        loadingPopup.remove();
+
+        new mapboxgl.Popup({ maxWidth: '340px', className: 'search-popup-container' })
+          .setLngLat([lng, lat])
+          .setHTML(popupHTML)
+          .addTo(mapInstance);
+      });
+
+      const marker = new mapboxgl.Marker(el)
+        .setLngLat([lng, lat])
+        .addTo(mapInstance);
+
+      newMarkers.push(marker);
+      bounds.extend([lng, lat]);
+    });
+
+    setActiveSearchMarkers(newMarkers);
+
+    // Filter out obvious out-of-bounds coords (like 0,0) before fitting
+    if (newMarkers.length > 0) {
+      mapInstance.fitBounds(bounds, {
+        padding: 50,
+        maxZoom: 15,
+        duration: 1500
+      });
+    }
+
+  }, [searchResults, isLoaded]);
 
   // 2D/3D mode toggle
   useEffect(() => {
