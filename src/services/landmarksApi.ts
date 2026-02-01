@@ -40,7 +40,7 @@ export interface Landmark {
     free?: boolean;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 // Famous Boston Landmarks - Static data for now
 // NYC Landmarks - To be populated or fetched from API

@@ -24,6 +24,7 @@ interface Map3DProps {
     timestamp: number;
   } | null;
   itineraryRouteData?: any;
+  onRouteCalculated?: (routeInfo: { totalDuration: number; segments: Array<{ mode: string; duration: number }> }) => void;
 }
 
 // New York City center (Times Square)
@@ -145,7 +146,7 @@ function generatePlaceInsightHTML(place: any): string {
   </div>`;
 }
 
-export default function Map3D({ settings, selectedLocation, mapCommand, itineraryRouteData }: Map3DProps) {
+export default function Map3D({ settings, selectedLocation, mapCommand, itineraryRouteData, onRouteCalculated }: Map3DProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -215,11 +216,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
   const [systemStress, setSystemStress] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showPlaces, setShowPlaces] = useState(false);
-  const [showTransitLayers, setShowTransitLayers] = useState(true);
-  const [showEvents, setShowEvents] = useState(false);
-  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [activeLayer, setActiveLayer] = useState<'transit' | 'restaurants' | 'events' | 'landmarks' | null>(null);
   const [is3DMode, setIs3DMode] = useState(true);
+  
+  // Derived state from activeLayer for compatibility
+  const showPlaces = activeLayer === 'restaurants';
+  const showTransitLayers = activeLayer === 'transit';
+  const showEvents = activeLayer === 'events';
+  const showLandmarks = activeLayer === 'landmarks';
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [selectedItineraryDay, setSelectedItineraryDay] = useState(0);
   const [showItinerary, setShowItinerary] = useState(false);
@@ -943,7 +947,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      // Walking paths (dotted green lines with glow)
+      // Walking paths - animated dashed line with glow
       mapInstance.addLayer({
         id: 'itinerary-walking-glow',
         type: 'line',
@@ -955,9 +959,9 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': '#10b981',
-          'line-width': 8,
-          'line-blur': 4,
+          'line-color': ['coalesce', ['get', 'routeColor'], '#10b981'],
+          'line-width': 14,
+          'line-blur': 6,
           'line-opacity': 0.4,
         },
       });
@@ -973,52 +977,90 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': '#10b981', // Green for walking
-          'line-width': 4,
-          'line-dasharray': [2, 2],
+          'line-color': ['coalesce', ['get', 'routeColor'], '#10b981'],
+          'line-width': 6,
+          'line-dasharray': [0.5, 1.5],
           'line-opacity': 1,
         },
       });
 
-      // Transit paths glow (for emphasis)
+      // Transit paths - thick solid lines with MTA colors
       mapInstance.addLayer({
         id: 'itinerary-transit-glow',
         type: 'line',
         source: 'itinerary-routes',
-        filter: ['!=', ['get', 'mode'], 'walking'],
+        filter: ['==', ['get', 'mode'], 'transit'],
         layout: {
           'visibility': 'none',
           'line-cap': 'round',
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['get', 'routeColor'],
-          'line-width': 12,
-          'line-blur': 4,
+          'line-color': ['coalesce', ['get', 'routeColor'], '#EE352E'],
+          'line-width': 18,
+          'line-blur': 6,
           'line-opacity': 0.5,
         },
       });
 
-      // Transit paths (solid lines, color-coded by MBTA line)
+      // Transit paths - solid thick line with subway color
       mapInstance.addLayer({
         id: 'itinerary-transit',
         type: 'line',
         source: 'itinerary-routes',
-        filter: ['!=', ['get', 'mode'], 'walking'],
+        filter: ['==', ['get', 'mode'], 'transit'],
         layout: {
           'visibility': 'none',
           'line-cap': 'round',
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['get', 'routeColor'],
-          'line-width': 6,
+          'line-color': ['coalesce', ['get', 'routeColor'], '#EE352E'],
+          'line-width': 8,
           'line-opacity': 1,
         },
       });
+      
+      // Transit center line (white stripe for subway look)
+      mapInstance.addLayer({
+        id: 'itinerary-transit-center',
+        type: 'line',
+        source: 'itinerary-routes',
+        filter: ['==', ['get', 'mode'], 'transit'],
+        layout: {
+          'visibility': 'none',
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 2,
+          'line-opacity': 0.3,
+        },
+      });
 
-      // Stop markers (colored by type)
-      // Colors: hotel=gold, meal=orange, visit=blue
+      // ===========================================
+      // ITINERARY STOP MARKERS - Clean Modern Pin Style
+      // ===========================================
+      
+      // Drop shadow
+      mapInstance.addLayer({
+        id: 'itinerary-stops-glow',
+        type: 'circle',
+        source: 'itinerary-stops',
+        layout: {
+          'visibility': 'none',
+        },
+        paint: {
+          'circle-radius': 16,
+          'circle-color': '#000000',
+          'circle-blur': 0.8,
+          'circle-opacity': 0.25,
+          'circle-translate': [0, 3],
+        },
+      });
+
+      // White background circle
       mapInstance.addLayer({
         id: 'itinerary-stops-circle',
         type: 'circle',
@@ -1027,40 +1069,55 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'visibility': 'none',
         },
         paint: {
-          'circle-radius': 20,
-          'circle-color': [
+          'circle-radius': 18,
+          'circle-color': '#ffffff',
+          'circle-stroke-color': [
             'match',
             ['get', 'type'],
-            'hotel', '#f59e0b', // Gold for hotel
-            'meal', '#f97316', // Orange for meals/restaurants
+            'hotel', '#f97316',    // Orange for start
+            'meal', '#ef4444',     // Red for food
             'activity', '#3b82f6', // Blue for activities
-            'visit', '#8b5cf6', // Purple for visits
-            '#3b82f6' // Default blue
+            'visit', '#8b5cf6',    // Purple for landmarks
+            '#f97316'
           ],
-          'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 3,
-          'circle-opacity': 0.95,
+          'circle-opacity': 1,
         },
       });
 
-      // Stop icons/emojis based on type
+      // Inner colored circle
+      mapInstance.addLayer({
+        id: 'itinerary-stops-highlight',
+        type: 'circle',
+        source: 'itinerary-stops',
+        layout: {
+          'visibility': 'none',
+        },
+        paint: {
+          'circle-radius': 12,
+          'circle-color': [
+            'match',
+            ['get', 'type'],
+            'hotel', '#f97316',    // Orange for start
+            'meal', '#ef4444',     // Red for food
+            'activity', '#3b82f6', // Blue for activities
+            'visit', '#8b5cf6',    // Purple for landmarks
+            '#f97316'
+          ],
+          'circle-opacity': 1,
+        },
+      });
+
+      // Number in center
       mapInstance.addLayer({
         id: 'itinerary-stops-icon',
         type: 'symbol',
         source: 'itinerary-stops',
         layout: {
           'visibility': 'none',
-          'text-field': [
-            'match',
-            ['get', 'type'],
-            'hotel', '🏨',
-            'meal', '🍽️',
-            'visit', '📍',
-            'activity', '🎯',
-            '📍'
-          ],
+          'text-field': ['get', 'order'],
           'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-          'text-size': 16,
+          'text-size': 14,
           'text-allow-overlap': true,
         },
         paint: {
@@ -1068,7 +1125,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         },
       });
 
-      // Stop number badge (small circle with number)
+      // Hidden - not used but needed for layer management
       mapInstance.addLayer({
         id: 'itinerary-stops-number-bg',
         type: 'circle',
@@ -1077,50 +1134,45 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'visibility': 'none',
         },
         paint: {
-          'circle-radius': 10,
-          'circle-color': '#000000',
-          'circle-translate': [15, -15], // Offset to top-right
-          'circle-opacity': 0.9,
+          'circle-radius': 0,
+          'circle-opacity': 0,
         },
       });
 
+      // Hidden - not used but needed for layer management
       mapInstance.addLayer({
         id: 'itinerary-stops-number',
         type: 'symbol',
         source: 'itinerary-stops',
         layout: {
           'visibility': 'none',
-          'text-field': ['get', 'stopNumber'],
-          'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-          'text-size': 12,
-          'text-allow-overlap': true,
-          'text-offset': [1.2, -1.2], // Match the circle offset
+          'text-field': '',
         },
         paint: {
-          'text-color': '#ffffff',
+          'text-opacity': 0,
         },
       });
 
-      // Stop labels with time
+      // Stop labels with name - below pin
       mapInstance.addLayer({
         id: 'itinerary-stops-label',
         type: 'symbol',
         source: 'itinerary-stops',
         layout: {
           'visibility': 'none',
-          'text-field': ['concat', ['get', 'time'], ' - ', ['get', 'name']],
-          'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-          'text-size': 11,
-          'text-offset': [0, 2.5],
+          'text-field': ['get', 'name'],
+          'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+          'text-size': 12,
+          'text-offset': [0, 1.8],
           'text-anchor': 'top',
-          'text-max-width': 15,
+          'text-max-width': 10,
         },
         paint: {
-          'text-color': '#ffffff',
-          'text-halo-color': '#000000',
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
           'text-halo-width': 2,
         },
-        minzoom: 11,
+        minzoom: 10,
       });
 
       // ================================================
@@ -1206,74 +1258,71 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           }
         }
 
-        // Build rating stars
-        let starsHTML = '';
-        if (placeRating > 0) {
-          const fullStars = Math.floor(placeRating);
-          const hasHalfStar = placeRating % 1 >= 0.5;
-          for (let i = 0; i < 5; i++) {
-            if (i < fullStars) {
-              starsHTML += '<span style="color: #000;">★</span>';
-            } else if (i === fullStars && hasHalfStar) {
-              starsHTML += '<span style="color: #000;">⯨</span>';
-            } else {
-              starsHTML += '<span style="color: #d1d5db;">★</span>';
-            }
-          }
-        }
-
-        // Build popup HTML
-        const photoHTML = photoUrl ?
-          `<div style="width: 100%; height: 160px; background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%); position: relative; overflow: hidden;">
-            <img src="${photoUrl}" 
-                 style="width: 100%; height: 100%; object-fit: cover;"
-                 onerror="this.parentElement.style.background='linear-gradient(135deg, ${typeColor} 0%, ${typeColor}99 100%)'; this.style.display='none';" />
-            ${placeRating > 0 ? `<div style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 6px; font-size: 12px; color: #000; font-weight: 700;">
-              ${starsHTML} <span style="margin-left: 4px;">${placeRating.toFixed(1)}</span>
-            </div>` : ''}
-            <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 4px 8px; border-radius: 20px; font-size: 11px; color: #fff; font-weight: 600;">
-              Stop #${stopNumber}
-            </div>
-          </div>` :
-          `<div style="width: 100%; height: 120px; background: linear-gradient(135deg, ${typeColor} 0%, ${typeColor}99 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">
-            <span style="font-size: 48px;">${typeIcon}</span>
-            <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.5); backdrop-filter: blur(8px); padding: 4px 8px; border-radius: 20px; font-size: 11px; color: #fff; font-weight: 600;">
-              Stop #${stopNumber}
-            </div>
-          </div>`;
-
+        // Build popup HTML - Dark glassmorphic style matching sidebar
         const popupHTML = `
-          <div class="itinerary-popup" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; overflow: hidden; border-radius: 12px;">
-            ${photoHTML}
-            <div style="padding: 14px;">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: ${typeColor}; color: #fff; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;">
-                  ${typeIcon} ${typeLabel}
-                </span>
-                ${stopTime ? `<span style="font-size: 13px; color: #000; font-weight: 600;">⏰ ${stopTime}</span>` : ''}
+          <div class="map-popup-card" style="width: 280px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(to bottom, rgba(51,65,85,0.95), rgba(30,41,59,0.98)); backdrop-filter: blur(20px); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);">
+            ${photoUrl ? `
+              <div style="height: 120px; background: url('${photoUrl}') center/cover no-repeat; position: relative;">
+                <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, rgba(30,41,59,0.9) 100%);"></div>
+                <div style="position: absolute; top: 10px; left: 10px; background: ${typeColor}; color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                  ${typeLabel}
+                </div>
               </div>
+            ` : ''}
+            
+            <div style="padding: 14px 16px;">
+              <!-- Type badge if no photo -->
+              ${!photoUrl ? `
+                <div style="display: inline-flex; align-items: center; gap: 6px; background: ${typeColor}; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">
+                  ${typeIcon} ${typeLabel}
+                </div>
+              ` : ''}
               
-              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 700; color: #000; line-height: 1.3;">
+              <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: #fff; line-height: 1.3;">
                 ${cleanName}
               </h3>
               
-              ${placeCategories ? `<p style="margin: 0 0 8px 0; font-size: 11px; color: #666;">
-                ${placeCategories}
-              </p>` : ''}
+              ${placeCategories ? `
+                <p style="margin: 0 0 10px 0; font-size: 11px; color: rgba(255,255,255,0.5);">
+                  ${placeCategories}
+                </p>
+              ` : ''}
               
-              ${placeAddress ? `<div style="display: flex; align-items: start; gap: 6px;">
-                <span style="font-size: 12px;">📍</span>
-                <span style="font-size: 11px; color: #6b7280; line-height: 1.4;">${placeAddress}</span>
-              </div>` : ''}
+              ${placeRating > 0 ? `
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 12px;">
+                  <div style="display: flex; gap: 2px;">
+                    ${Array(5).fill(0).map((_, i) => `<span style="color: ${i < Math.floor(placeRating) ? '#fbbf24' : 'rgba(255,255,255,0.2)'}; font-size: 11px;">★</span>`).join('')}
+                  </div>
+                  <span style="font-size: 12px; font-weight: 600; color: #fff;">${placeRating.toFixed(1)}</span>
+                </div>
+              ` : ''}
+              
+              ${placeAddress ? `
+                <div style="display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; background: rgba(255,255,255,0.05); border-radius: 10px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08);">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" style="flex-shrink: 0; margin-top: 2px;">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <span style="font-size: 11px; color: rgba(255,255,255,0.6); line-height: 1.4;">${placeAddress}</span>
+                </div>
+              ` : ''}
+              
+              <button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(placeAddress || cleanName)}', '_blank')" style="width: 100%; padding: 11px; background: #f97316; border: none; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 2px 8px rgba(249,115,22,0.3);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+                </svg>
+                Get Directions
+              </button>
             </div>
           </div>
         `;
 
         new mapboxgl.Popup({
-          maxWidth: '340px',
-          className: 'itinerary-popup-container',
+          maxWidth: '300px',
+          className: 'dark-popup',
           closeButton: true,
-          closeOnClick: true
+          closeOnClick: true,
+          offset: 30
         })
           .setLngLat(coordinates)
           .setHTML(popupHTML)
@@ -2004,7 +2053,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
   // Fetch train data from API (every 30 seconds)
   const fetchTrainData = useCallback(async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/mta/trains`);
+      const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+      const response = await fetch(`${apiUrl}/api/mta/trains`);
       if (!response.ok) throw new Error('Failed to fetch trains');
       const data = await response.json();
 
@@ -2367,7 +2417,264 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
     const mapInstance = map.current;
 
-    // MBTA line colors
+    // Handle simple points format from smart planner
+    if (itineraryRouteData.points && Array.isArray(itineraryRouteData.points)) {
+      console.log('[Itinerary] Rendering route with', itineraryRouteData.points.length, 'points');
+      
+      const points = itineraryRouteData.points;
+      
+      // Build stop features - map types to layer-compatible types
+      const typeMapping: { [key: string]: string } = {
+        'start': 'hotel',      // User location - gold
+        'food': 'meal',        // Restaurants - orange  
+        'landmark': 'visit',   // Landmarks - purple
+        'event': 'activity',   // Events - blue
+        'transit': 'activity'  // Transit - blue
+      };
+      
+      const stopFeatures = points.map((point: any, index: number) => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [point.lng, point.lat]
+        },
+        properties: {
+          name: point.name,
+          type: typeMapping[point.type] || 'visit',
+          order: index + 1,
+          isStart: point.type === 'start',
+          originalType: point.type
+        }
+      }));
+
+      // Set stops data immediately
+      if (mapInstance.getSource('itinerary-stops')) {
+        (mapInstance.getSource('itinerary-stops') as mapboxgl.GeoJSONSource).setData({
+          type: 'FeatureCollection',
+          features: stopFeatures
+        });
+      }
+
+      // Show stop layers immediately - including new glow and highlight layers
+      ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon', 
+       'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
+        if (mapInstance.getLayer(layer)) {
+          mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
+        }
+      });
+
+      // Fit map to show all points
+      if (points.length > 1) {
+        const bounds = new mapboxgl.LngLatBounds();
+        points.forEach((p: any) => bounds.extend([p.lng, p.lat]));
+        mapInstance.fitBounds(bounds, {
+          padding: { top: 100, bottom: 150, left: 100, right: 350 },
+          duration: 1500
+        });
+      }
+
+      // Fetch real directions - uses walking + subway for long distances
+      const fetchDirections = async () => {
+        if (points.length < 2) return;
+        
+        const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
+        const allRouteFeatures: any[] = [];
+        
+        // NYC Subway stations data (imported from nycSubwayStations.json)
+        const subwayStations = [
+          { name: "Times Sq-42 St", routes: "1237NQRS", lng: -73.9867, lat: 40.7559 },
+          { name: "Grand Central-42 St", routes: "4567S", lng: -73.9772, lat: 40.7527 },
+          { name: "W 4 St-Wash Sq", routes: "ABCDEFM", lng: -74.0004, lat: 40.7308 },
+          { name: "Herald Sq-34 St", routes: "BDFMNQRW", lng: -73.988, lat: 40.7496 },
+          { name: "1 Av", routes: "L", lng: -73.9816, lat: 40.7305 },
+          { name: "96 St", routes: "123", lng: -73.9723, lat: 40.7961 },
+          { name: "Queensboro Plaza", routes: "7NQW", lng: -73.9402, lat: 40.7504 },
+          { name: "Court Sq", routes: "EGM", lng: -73.9442, lat: 40.7466 },
+          { name: "Atlantic Av-Barclays", routes: "2345BDNQR", lng: -73.9778, lat: 40.684 },
+          { name: "14 St-Union Sq", routes: "456LNQRW", lng: -73.9903, lat: 40.7356 },
+          { name: "Penn Station", routes: "123ACE", lng: -73.9932, lat: 40.7506 },
+          { name: "Fulton St", routes: "2345ACJZ", lng: -74.0065, lat: 40.7102 },
+          { name: "Jay St-MetroTech", routes: "ACFR", lng: -73.9862, lat: 40.6923 },
+          { name: "Bedford Av", routes: "L", lng: -73.9566, lat: 40.7174 },
+          { name: "Lorimer St", routes: "LG", lng: -73.9502, lat: 40.7140 },
+          { name: "Marcy Av", routes: "JMZ", lng: -73.9579, lat: 40.7083 },
+        ];
+        
+        // Subway line colors
+        const lineColors: { [key: string]: string } = {
+          '1': '#EE352E', '2': '#EE352E', '3': '#EE352E',
+          '4': '#00933C', '5': '#00933C', '6': '#00933C',
+          '7': '#B933AD',
+          'A': '#0039A6', 'C': '#0039A6', 'E': '#0039A6',
+          'B': '#FF6319', 'D': '#FF6319', 'F': '#FF6319', 'M': '#FF6319',
+          'G': '#6CBE45',
+          'J': '#996633', 'Z': '#996633',
+          'L': '#A7A9AC',
+          'N': '#FCCC0A', 'Q': '#FCCC0A', 'R': '#FCCC0A', 'W': '#FCCC0A',
+          'S': '#808183'
+        };
+        
+        // Calculate distance between two points (in meters)
+        const getDistance = (p1: any, p2: any) => {
+          const R = 6371000;
+          const lat1 = p1.lat * Math.PI / 180;
+          const lat2 = p2.lat * Math.PI / 180;
+          const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+          const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1) * Math.cos(lat2) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          return R * c;
+        };
+        
+        // Find nearest subway station
+        const findNearestStation = (point: any) => {
+          let nearest = subwayStations[0];
+          let minDist = getDistance(point, nearest);
+          for (const station of subwayStations) {
+            const dist = getDistance(point, station);
+            if (dist < minDist) {
+              minDist = dist;
+              nearest = station;
+            }
+          }
+          return { station: nearest, distance: minDist };
+        };
+        
+        // Get walking directions
+        const getWalkingRoute = async (from: any, to: any) => {
+          const waypoints = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+          const response = await fetch(
+            `https://api.mapbox.com/directions/v5/mapbox/walking/${waypoints}?geometries=geojson&overview=full&access_token=${mapboxToken}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            return data.routes?.[0] || null;
+          }
+          return null;
+        };
+        
+        try {
+          for (let i = 0; i < points.length - 1; i++) {
+            const from = points[i];
+            const to = points[i + 1];
+            const directDistance = getDistance(from, to);
+            
+            // If distance > 1.5km, use subway
+            if (directDistance > 1500) {
+              const fromStation = findNearestStation(from);
+              const toStation = findNearestStation(to);
+              
+              console.log(`[Itinerary] Subway route: ${from.name} → ${fromStation.station.name} → ${toStation.station.name} → ${to.name}`);
+              
+              // 1. Walk to station
+              const walkToStation = await getWalkingRoute(from, fromStation.station);
+              if (walkToStation) {
+                const walkMin = Math.round(walkToStation.duration / 60);
+                allRouteFeatures.push({
+                  type: 'Feature',
+                  geometry: walkToStation.geometry,
+                  properties: { mode: 'walking', routeColor: '#10b981', duration: walkToStation.duration }
+                });
+              }
+              
+              // 2. Subway segment (straight line between stations with subway color)
+              const subwayLine = fromStation.station.routes[0]; // First available line
+              const subwayColor = lineColors[subwayLine] || '#3b82f6';
+              const subwayDist = getDistance(fromStation.station, toStation.station);
+              const subwayMin = Math.round(subwayDist / 500); // ~500m per minute on subway
+              
+              allRouteFeatures.push({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [
+                    [fromStation.station.lng, fromStation.station.lat],
+                    [toStation.station.lng, toStation.station.lat]
+                  ]
+                },
+                properties: { 
+                  mode: 'transit', 
+                  routeColor: subwayColor, 
+                  duration: subwayMin * 60,
+                  line: subwayLine
+                }
+              });
+              
+              // 3. Walk from station to destination
+              const walkFromStation = await getWalkingRoute(toStation.station, to);
+              if (walkFromStation) {
+                allRouteFeatures.push({
+                  type: 'Feature',
+                  geometry: walkFromStation.geometry,
+                  properties: { mode: 'walking', routeColor: '#10b981', duration: walkFromStation.duration }
+                });
+              }
+              
+            } else {
+              // Short distance - just walk
+              const walkRoute = await getWalkingRoute(from, to);
+              if (walkRoute) {
+                allRouteFeatures.push({
+                  type: 'Feature',
+                  geometry: walkRoute.geometry,
+                  properties: { mode: 'walking', routeColor: '#10b981', duration: walkRoute.duration }
+                });
+              }
+            }
+          }
+          
+          // Calculate totals
+          const totalDuration = allRouteFeatures.reduce((sum, f) => sum + (f.properties.duration || 0), 0);
+          const totalMin = Math.round(totalDuration / 60);
+          console.log('[Itinerary] Total trip:', totalMin, 'min');
+          
+          // Callback with route info to update sidebar
+          const segments = allRouteFeatures.map(f => ({
+            mode: f.properties.mode,
+            duration: Math.round((f.properties.duration || 0) / 60)
+          }));
+          
+          console.log('[Itinerary] Route segments:', segments);
+          console.log('[Itinerary] onRouteCalculated callback exists:', !!onRouteCalculated);
+          
+          if (onRouteCalculated) {
+            onRouteCalculated({
+              totalDuration: totalMin,
+              segments
+            });
+            console.log('[Itinerary] Callback called with:', { totalDuration: totalMin, segments });
+          }
+          
+          // Set route data
+          if (mapInstance.getSource('itinerary-routes')) {
+            (mapInstance.getSource('itinerary-routes') as mapboxgl.GeoJSONSource).setData({
+              type: 'FeatureCollection',
+              features: allRouteFeatures
+            });
+          }
+          
+          // Show route layers
+          ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit', 'itinerary-transit-center'].forEach(layer => {
+            if (mapInstance.getLayer(layer)) {
+              mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
+            }
+          });
+          
+          console.log('[Itinerary] Smart transit route rendered!');
+          
+        } catch (error) {
+          console.error('[Itinerary] Route error:', error);
+        }
+      };
+      
+      fetchDirections();
+      setShowItinerary(true);
+      return;
+    }
+
+    // MBTA line colors (for complex schedule format)
     const transitColors: { [key: string]: string } = {
       'red line': '#da291c',
       'red': '#da291c',
@@ -2387,7 +2694,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       'commuter': '#56236E',
     };
 
-    // Get the active day schedule
+    // Get the active day schedule (complex format)
     const schedule = itineraryRouteData.isMultiDay && itineraryRouteData.days
       ? itineraryRouteData.days[selectedItineraryDay]?.schedule
       : itineraryRouteData.schedule;
@@ -2720,7 +3027,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         maxZoom: 14
       });
     }
-  }, [itineraryRouteData, selectedItineraryDay, isLoaded]);
+  }, [itineraryRouteData, selectedItineraryDay, isLoaded, onRouteCalculated]);
 
   // 2D/3D mode toggle
   useEffect(() => {
@@ -2929,8 +3236,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       {/* Layer Toggle Controls */}
       <div className="layer-toggle-controls">
         <button
-          className={`layer-toggle-btn ${showTransitLayers ? 'active' : ''}`}
-          onClick={() => setShowTransitLayers(!showTransitLayers)}
+          className={`layer-toggle-btn ${activeLayer === 'transit' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'transit' ? null : 'transit')}
           title="Toggle Transit"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2941,8 +3248,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showPlaces ? 'active' : ''}`}
-          onClick={() => setShowPlaces(!showPlaces)}
+          className={`layer-toggle-btn ${activeLayer === 'restaurants' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'restaurants' ? null : 'restaurants')}
           title="Toggle Restaurants"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2952,8 +3259,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showEvents ? 'active' : ''}`}
-          onClick={() => setShowEvents(!showEvents)}
+          className={`layer-toggle-btn ${activeLayer === 'events' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'events' ? null : 'events')}
           title="Toggle Events"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2966,8 +3273,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showLandmarks ? 'active' : ''}`}
-          onClick={() => setShowLandmarks(!showLandmarks)}
+          className={`layer-toggle-btn ${activeLayer === 'landmarks' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'landmarks' ? null : 'landmarks')}
           title="Toggle Landmarks"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
