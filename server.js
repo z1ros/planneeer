@@ -3410,6 +3410,185 @@ app.get('/api/mta/:line', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/chat/speak
+ * AI-powered conversational responses for voice queries
+ * Handles questions like "what hidden places do you suggest" or "how do I get to Columbia"
+ */
+app.post('/api/chat/speak', async (req, res) => {
+    try {
+        const { query, context } = req.body;
+
+        if (!query || query.trim().length === 0) {
+            return res.status(400).json({ error: 'Query is required' });
+        }
+
+        console.log('[Chat] Query:', query);
+
+        // Check if this is a directions query
+        const directionsMatch = query.toLowerCase().match(/(?:how (?:do i|to) get to|directions to|take me to|go to|get to)\s+(.+)/i);
+        const isDirectionsQuery = !!directionsMatch;
+        const destination = directionsMatch ? directionsMatch[1].trim() : null;
+
+        // Check if this is a suggestion/recommendation query
+        const suggestionKeywords = ['suggest', 'recommend', 'hidden', 'secret', 'best', 'top', 'should i', 'what are', 'where should', 'good places', 'cool spots'];
+        const isSuggestionQuery = suggestionKeywords.some(kw => query.toLowerCase().includes(kw));
+
+        let prompt;
+        let searchResults = [];
+
+        if (isDirectionsQuery && destination) {
+            // Search for the destination
+            const queryEmbedding = await getQueryEmbedding(destination);
+            
+            if (queryEmbedding) {
+                // Search landmarks first
+                const landmarks = await nycLandmarksCollection.aggregate([
+                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $match: { 'location.coordinates': { $exists: true } }},
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                // Also search restaurants
+                const restaurants = await nycRestaurantsCollection.aggregate([
+                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $match: { 'location.coordinates': { $exists: true } }},
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                searchResults = [...landmarks, ...restaurants].sort((a, b) => (b.score || 0) - (a.score || 0));
+            }
+
+            const topResult = searchResults[0];
+            const nearestStation = topResult ? findNearestStationForChat(
+                topResult.location?.coordinates?.[1] || 40.7580,
+                topResult.location?.coordinates?.[0] || -73.9855
+            ) : null;
+
+            prompt = `You are a friendly NYC tour guide giving directions. The user asked: "${query}"
+
+${topResult ? `
+I found: ${topResult.name}
+Address: ${topResult.address || 'NYC'}
+${nearestStation ? `Nearest subway: ${nearestStation.name} (${nearestStation.lines.join('/')}) - about ${nearestStation.walkingMinutes} min walk from the station` : ''}
+` : `I couldn't find an exact match for "${destination}".`}
+
+Give a helpful, conversational response about how to get there. Include:
+1. Which subway line(s) to take
+2. Which station to get off at
+3. Approximate travel time (assume starting from Midtown Manhattan)
+4. A brief tip about the destination
+
+Keep it natural and friendly, as if speaking to a friend. Keep it under 100 words.`;
+
+        } else if (isSuggestionQuery) {
+            // Search for relevant places based on the query
+            const queryEmbedding = await getQueryEmbedding(query);
+            
+            if (queryEmbedding) {
+                const landmarks = await nycLandmarksCollection.aggregate([
+                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                const restaurants = await nycRestaurantsCollection.aggregate([
+                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                searchResults = [...landmarks, ...restaurants];
+            }
+
+            const placesList = searchResults.slice(0, 5).map(p => 
+                `- ${p.name}: ${p.vibe_metadata?.description || p.description || 'A great NYC spot'}`
+            ).join('\n');
+
+            prompt = `You are a friendly NYC local giving recommendations. The user asked: "${query}"
+
+Here are some places I found:
+${placesList || 'I found several interesting spots in NYC.'}
+
+Give a helpful, enthusiastic response recommending 2-3 of these places. Explain briefly why each is special.
+Keep it natural and conversational, as if talking to a friend. Keep it under 120 words.`;
+
+        } else {
+            // General conversational query
+            prompt = `You are a friendly NYC tour guide assistant. The user asked: "${query}"
+
+Give a helpful, conversational response about NYC. If they're asking about a specific place, give directions and tips.
+If they're asking for suggestions, recommend interesting spots.
+Keep it natural and friendly. Keep it under 100 words.`;
+        }
+
+        // Call Gemini API
+        const geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.8, maxOutputTokens: 300 }
+            })
+        });
+
+        if (!geminiResponse.ok) {
+            throw new Error('Failed to get AI response');
+        }
+
+        const geminiData = await geminiResponse.json();
+        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 
+            "I'd love to help you explore NYC! Could you tell me more about what you're looking for?";
+
+        console.log('[Chat] Response:', responseText.substring(0, 100) + '...');
+
+        res.json({
+            response: responseText,
+            query,
+            type: isDirectionsQuery ? 'directions' : isSuggestionQuery ? 'suggestion' : 'general',
+            foundPlaces: searchResults.slice(0, 3).map(p => ({ name: p.name, address: p.address }))
+        });
+
+    } catch (error) {
+        console.error('[Chat] Error:', error);
+        res.status(500).json({ error: 'Failed to generate response' });
+    }
+});
+
+// Helper function for chat directions
+function findNearestStationForChat(lat, lng) {
+    let nearest = null;
+    let minDist = Infinity;
+    
+    for (const [stopId, stop] of Object.entries(NYC_STOPS)) {
+        const dist = Math.sqrt(Math.pow(stop.lat - lat, 2) + Math.pow(stop.lng - lng, 2));
+        if (dist < minDist) {
+            minDist = dist;
+            nearest = { ...stop, id: stopId };
+        }
+    }
+    
+    if (!nearest) return null;
+    
+    const walkingMinutes = Math.round(minDist * 69 * 20);
+    const prefix = nearest.id.charAt(0);
+    const lineMap = {
+        '1': ['1', '2', '3'], '2': ['4', '5', '6'], '3': ['7'],
+        '4': ['N', 'Q', 'R', 'W'], '5': ['B', 'D', 'F', 'M'],
+        '6': ['J', 'Z'], '7': ['G'], 'A': ['A', 'C', 'E'],
+        'L': ['L'], 'N': ['N', 'Q', 'R', 'W'], 'S': ['S']
+    };
+    
+    return {
+        name: nearest.name,
+        lines: lineMap[prefix] || ['1', '2', '3'],
+        walkingMinutes: Math.min(walkingMinutes, 15)
+    };
+}
+
+
 // Start server
 connectDB().then(() => {
     app.listen(PORT, () => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ItineraryTimeline from './ItineraryTimeline';
 import BudgetBreakdown from './BudgetBreakdown';
 import { DetailedItinerary, DetailedStop } from '../../services/plannerApi';
+import { speakItinerary, stopSpeaking, getIsSpeaking } from '../../services/speechService';
 
 export interface ItineraryItem {
   id: string;
@@ -81,6 +82,55 @@ function SubwayPill({ line }: { line: string }) {
     >
       {line}
     </span>
+  );
+}
+
+// Listen button component - reads itinerary aloud
+function ListenButton({ itinerary }: { itinerary: DetailedItinerary }) {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const handleClick = () => {
+    if (isSpeaking || getIsSpeaking()) {
+      stopSpeaking();
+      setIsSpeaking(false);
+    } else {
+      setIsSpeaking(true);
+      speakItinerary({
+        title: itinerary.title,
+        overview: itinerary.overview,
+        totalDuration: itinerary.totalDuration,
+        totalCost: itinerary.totalCost,
+        stops: itinerary.stops.map(stop => ({
+          name: stop.name,
+          arrivalTime: stop.arrivalTime,
+          duration: stop.duration,
+          whyVisit: stop.whyVisit,
+          transitToNext: stop.transitToNext
+        }))
+      });
+      
+      // Check when speech ends
+      const checkSpeaking = setInterval(() => {
+        if (!getIsSpeaking()) {
+          setIsSpeaking(false);
+          clearInterval(checkSpeaking);
+        }
+      }, 500);
+    }
+  };
+
+  return (
+    <button 
+      onClick={handleClick}
+      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+        isSpeaking 
+          ? 'bg-green-500 text-white animate-pulse' 
+          : 'bg-white/5 hover:bg-green-500/20 text-white/40 hover:text-green-400'
+      }`}
+      title={isSpeaking ? "Stop reading" : "Read itinerary aloud"}
+    >
+      <i className={`fa-solid ${isSpeaking ? 'fa-stop' : 'fa-volume-high'} text-xs`}></i>
+    </button>
   );
 }
 
@@ -277,6 +327,8 @@ export default function RightItineraryPanel({
               <span className="text-white/40 text-xs font-medium uppercase tracking-wider">Your Itinerary</span>
             </div>
             <div className="flex gap-1">
+              {/* Listen button */}
+              <ListenButton itinerary={detailedItinerary} />
               <button 
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white flex items-center justify-center transition-all"

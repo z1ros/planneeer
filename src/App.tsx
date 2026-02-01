@@ -7,6 +7,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import LoadingScreen from './components/LoadingScreen';
 import { ItineraryEvent } from './types';
 import { getSmartPlan, performSearch, buildDetailedItinerary, createItineraryFromQuery, isItineraryQuery, SmartPlanResponse, PlanData, SearchResponse, SearchResult, SearchType, DetailedItinerary, DetailedStop } from './services/plannerApi';
+import { speak, speakAIResponse } from './services/speechService';
 import './App.css';
 import './styles/industrial.css';
 
@@ -945,6 +946,20 @@ function MapPage() {
 
   // Vector search handler - calls the new semantic search endpoint
   // Filters by active layer type (restaurants, events, landmarks) when one is selected
+  // Check if query is a conversational question that needs a spoken response
+  const isConversationalQuery = (query: string): boolean => {
+    const conversationalPatterns = [
+      /^(what|where|how|which|can you|could you|tell me|suggest|recommend)/i,
+      /hidden (places|spots|gems)/i,
+      /best (places|spots|things)/i,
+      /how (do i|to) get to/i,
+      /directions to/i,
+      /what should i/i,
+      /where should i/i
+    ];
+    return conversationalPatterns.some(pattern => pattern.test(query.trim()));
+  };
+
   const handleSearch = useCallback(async (query: string) => {
     // If query is empty, clear search results and show all
     if (!query || query.trim() === '') {
@@ -960,8 +975,24 @@ function MapPage() {
     setItineraryRouteData(null);
 
     try {
-      // Check if this looks like an itinerary request
-      if (isItineraryQuery(query)) {
+      // Check if this is a conversational query that should get a spoken response
+      if (isConversationalQuery(query) && !isItineraryQuery(query)) {
+        console.log('[App] Detected conversational query, getting AI response:', query);
+        
+        // Get AI response and speak it
+        const response = await speakAIResponse(query);
+        console.log('[App] AI spoke:', response?.substring(0, 50) + '...');
+        
+        // Also do a search to show results on map
+        const searchType: SearchType = activeLayer === 'restaurants' || activeLayer === 'events' || activeLayer === 'landmarks'
+          ? activeLayer
+          : null;
+        const searchResponse = await performSearch(query, 15, searchType);
+        setSearchResults(searchResponse);
+        setDetailedItinerary(null);
+        
+      } else if (isItineraryQuery(query)) {
+        // Check if this looks like an itinerary request
         console.log('[App] Detected itinerary query, creating plan:', query);
         setSearchResults(null);
         setDetailedItinerary(null);
@@ -975,6 +1006,9 @@ function MapPage() {
         if (response.success && response.itinerary) {
           setDetailedItinerary(response.itinerary);
           setBudget(response.budget);
+          
+          // Speak a summary of the itinerary
+          speak(`I've created an itinerary for you: ${response.itinerary.title}. ${response.itinerary.overview} Click the speaker icon to hear the full details.`);
           
           // Set route on map
           const routePoints = [
