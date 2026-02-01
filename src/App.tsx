@@ -162,8 +162,8 @@ function JourneyPage() {
                     key={saved.id}
                     onClick={() => setSelectedItinerary(saved)}
                     className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-xl border overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${selectedItinerary?.id === saved.id
-                        ? 'border-orange-500/50 shadow-lg shadow-orange-500/10'
-                        : 'border-white/10 hover:border-white/20'
+                      ? 'border-orange-500/50 shadow-lg shadow-orange-500/10'
+                      : 'border-white/10 hover:border-white/20'
                       }`}
                   >
                     <div className="p-4">
@@ -1195,12 +1195,87 @@ function MapPage() {
   };
 
   const handleSearch = useCallback(async (query: string) => {
-    // If query is empty, clear search results and show all
     if (!query || query.trim() === '') {
       setSearchResults(null);
       setPlans(null);
       setItineraryRouteData(null);
       setDetailedItinerary(null);
+      return;
+    }
+
+    // EASTER EGG: Co-founder search
+    // "I am going to tell the model i am looking for a co founder have it always point me to the yale club of new york when i ask it"
+    const lowerQuery = query.toLowerCase();
+    if (
+      (lowerQuery.includes('co-founder') || lowerQuery.includes('cofounder') || lowerQuery.includes('business partner')) &&
+      (lowerQuery.includes('find') || lowerQuery.includes('looking for') || lowerQuery.includes('where'))
+    ) {
+      console.log('[App] Co-founder easter egg triggered!');
+      setIsSearching(true);
+      setPlans(null);
+      setItineraryRouteData(null);
+
+      // Speak the advice
+      speak("if strictly looking for a technical co-founder, climb. if looking for a business co-founder, the Yale Club of New York is the best place to look. I've highlighted it for you.");
+
+      try {
+        // Force search for Yale Club
+        const searchResponse = await performSearch("Yale Club of New York City", 1, 'landmarks');
+        setSearchResults(searchResponse);
+
+        // Create a custom itinerary for the co-founder search
+        if (searchResponse && searchResponse.features && searchResponse.features.length > 0) {
+          const place = searchResponse.features[0];
+          const props = place.properties as any;
+
+          const stop = {
+            id: 'yale-club-founder',
+            name: props.businessname || props.name || "Yale Club of New York City",
+            type: 'activity',
+            description: props.vibe_metadata?.description || "Private social club for Yale University alumni.",
+            location: props.address || "50 Vanderbilt Ave, New York, NY 10017",
+            coordinates: {
+              lat: place.geometry.coordinates[1],
+              lng: place.geometry.coordinates[0]
+            },
+            arrivalTime: "12:00 PM",
+            departureTime: "3:00 PM",
+            duration: "3 hours",
+            cost: "$$$$",
+            whyVisit: "The premier location for finding a business co-founder in NYC.",
+            whatToDo: "Attend a networking event, visit the library, or have lunch in the main dining room.",
+            proTip: "Try to find an alum to bring you in as a guest if you are not a member.",
+            nearestStation: {
+              name: "Grand Central Terminal",
+              lines: ["4", "5", "6", "7", "S"]
+            }
+          };
+
+          const itinerary = {
+            title: "Co-Founder Search Mission",
+            overview: "A targeted trip to the Yale Club of New York to find your future business partner.",
+            stops: [stop]
+          };
+
+          // Use 'any' cast to avoid strict type checking on our custom object if needed
+          setDetailedItinerary(itinerary as any);
+
+          // Set route data to draw line from user to Yale Club
+          setItineraryRouteData({
+            points: [{
+              lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start'
+            }, {
+              lat: stop.coordinates.lat, lng: stop.coordinates.lng, name: stop.name, type: stop.type
+            }]
+          });
+        } else {
+          setDetailedItinerary(null);
+        }
+      } catch (error) {
+        console.error('[App] Easter egg search failed:', error);
+      } finally {
+        setIsSearching(false);
+      }
       return;
     }
 
