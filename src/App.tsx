@@ -2,12 +2,13 @@ import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Map3D, { LayerType } from './components/Map3D';
 import MapErrorBoundary from './components/MapErrorBoundary';
-import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, BudgetData, ReservationModal } from './components/map-overlay';
+import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, ReservationModal } from './components/map-overlay';
 import WelcomeScreen from './components/WelcomeScreen';
 import LoadingScreen from './components/LoadingScreen';
 import { ItineraryEvent } from './types';
-import { getSmartPlan, performSearch, buildDetailedItinerary, createItineraryFromQuery, isItineraryQuery, SmartPlanResponse, PlanData, SearchResponse, SearchResult, SearchType, DetailedItinerary, DetailedStop } from './services/plannerApi';
+import { getSmartPlan, performSearch, buildDetailedItinerary, createItineraryFromQuery, isItineraryQuery, SmartPlanResponse, PlanData, SearchResponse, SearchResult, SearchType, DetailedItinerary, DetailedStop, BudgetData } from './services/plannerApi';
 import { speak, speakAIResponse } from './services/speechService';
+import { saveItinerary, getSavedItineraries, deleteItinerary, toggleItineraryFavorite, SavedItinerary, addRecentSearch } from './services/storageService';
 import './App.css';
 import './styles/industrial.css';
 
@@ -80,14 +81,258 @@ function MainLayout() {
   );
 }
 
-// Placeholder pages for routes
+// Journey Page - Shows saved itineraries from localStorage (auto-saved from /map searches)
 function JourneyPage() {
+  const [savedItineraries, setSavedItineraries] = useState<SavedItinerary[]>([]);
+  const [selectedItinerary, setSelectedItinerary] = useState<SavedItinerary | null>(null);
+
+  // Load saved itineraries on mount
+  useEffect(() => {
+    setSavedItineraries(getSavedItineraries());
+  }, []);
+
+  // Handle delete
+  const handleDelete = (id: string) => {
+    deleteItinerary(id);
+    setSavedItineraries(prev => prev.filter(i => i.id !== id));
+    if (selectedItinerary?.id === id) {
+      setSelectedItinerary(null);
+    }
+  };
+
+  // Handle favorite toggle
+  const handleToggleFavorite = (id: string) => {
+    toggleItineraryFavorite(id);
+    setSavedItineraries(getSavedItineraries());
+  };
+
+  // Format date
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
-    <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
-      <div className="text-center text-white">
-        <i className="fa-solid fa-route text-6xl text-orange-500 mb-4"></i>
-        <h1 className="text-3xl font-bold mb-2">Journey Planner</h1>
-        <p className="text-white/60">Plan your perfect trip itinerary</p>
+    <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+      {/* Ambient effects */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 right-20 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-40 left-20 w-80 h-80 bg-purple-500/5 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/3 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="absolute inset-0 pl-24 pr-6 py-6 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-white/5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-orange-500/50 [&::-webkit-scrollbar-thumb]:rounded-full">
+        
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shadow-lg shadow-orange-500/20">
+              <i className="fa-solid fa-route text-white text-xl"></i>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">My Journeys</h1>
+              <p className="text-white/40 text-sm">Your saved itineraries from map searches</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex gap-6">
+          {/* Saved Itineraries List */}
+          <div className={`${selectedItinerary ? 'w-1/2' : 'w-full max-w-3xl'} transition-all`}>
+            {savedItineraries.length === 0 ? (
+              <div className="bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-12 text-center">
+                <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-orange-500/20 to-red-500/20 flex items-center justify-center">
+                  <i className="fa-solid fa-route text-3xl text-orange-400/50"></i>
+                </div>
+                <h3 className="text-white font-semibold text-lg mb-2">No saved journeys yet</h3>
+                <p className="text-white/40 text-sm mb-6">Search for places on the map to create itineraries</p>
+                <a
+                  href="/map"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-orange-500/30 transition-all"
+                >
+                  <i className="fa-solid fa-map-location-dot"></i>
+                  Go to Map
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {savedItineraries.map((saved) => (
+                  <div
+                    key={saved.id}
+                    onClick={() => setSelectedItinerary(saved)}
+                    className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-xl border overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${
+                      selectedItinerary?.id === saved.id
+                        ? 'border-orange-500/50 shadow-lg shadow-orange-500/10'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="text-white font-semibold truncate">{saved.itinerary.title}</h3>
+                            {saved.isFavorite && (
+                              <i className="fa-solid fa-star text-yellow-500 text-xs"></i>
+                            )}
+                          </div>
+                          <p className="text-white/40 text-sm line-clamp-2 mb-2">{saved.itinerary.overview}</p>
+                          <div className="flex items-center gap-4 text-xs">
+                            <span className="text-white/30 flex items-center gap-1">
+                              <i className="fa-solid fa-clock text-orange-500/60"></i>
+                              {saved.itinerary.totalDuration}
+                            </span>
+                            <span className="text-white/30 flex items-center gap-1">
+                              <i className="fa-solid fa-dollar-sign text-orange-500/60"></i>
+                              {saved.itinerary.totalCost}
+                            </span>
+                            <span className="text-white/30 flex items-center gap-1">
+                              <i className="fa-solid fa-map-pin text-orange-500/60"></i>
+                              {saved.itinerary.stops.length} stops
+                            </span>
+                          </div>
+                          {saved.query && (
+                            <p className="text-white/20 text-xs mt-2 italic truncate">
+                              "{saved.query}"
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="text-white/20 text-xs">{formatDate(saved.createdAt)}</span>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleFavorite(saved.id);
+                              }}
+                              className="w-8 h-8 rounded-lg bg-white/5 hover:bg-yellow-500/20 flex items-center justify-center transition-colors"
+                            >
+                              <i className={`fa-${saved.isFavorite ? 'solid' : 'regular'} fa-star text-xs ${saved.isFavorite ? 'text-yellow-500' : 'text-white/40'}`}></i>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(saved.id);
+                              }}
+                              className="w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 flex items-center justify-center transition-colors"
+                            >
+                              <i className="fa-solid fa-trash text-xs text-white/40 hover:text-red-400"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selected Itinerary Detail */}
+          {selectedItinerary && (
+            <div className="w-1/2 bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden max-h-[calc(100vh-140px)] flex flex-col">
+              {/* Header */}
+              <div className="p-4 border-b border-white/10 shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
+                      <i className="fa-solid fa-route text-white text-sm"></i>
+                    </div>
+                    <span className="text-white/60 text-xs font-medium uppercase tracking-wider">Itinerary Details</span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedItinerary(null)}
+                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-colors"
+                  >
+                    <i className="fa-solid fa-times text-xs"></i>
+                  </button>
+                </div>
+                <h2 className="text-white font-bold text-xl">{selectedItinerary.itinerary.title}</h2>
+                <p className="text-white/40 text-sm mt-1">{selectedItinerary.itinerary.overview}</p>
+                
+                {/* Stats */}
+                <div className="flex gap-2 mt-4">
+                  <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                    <div className="flex items-center gap-1.5">
+                      <i className="fa-solid fa-clock text-orange-500 text-[10px]"></i>
+                      <span className="text-white text-xs font-semibold">{selectedItinerary.itinerary.totalDuration}</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                    <div className="flex items-center gap-1.5">
+                      <i className="fa-solid fa-dollar-sign text-orange-500 text-[10px]"></i>
+                      <span className="text-white text-xs font-semibold">{selectedItinerary.itinerary.totalCost}</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                    <div className="flex items-center gap-1.5">
+                      <i className="fa-solid fa-map-pin text-orange-500 text-[10px]"></i>
+                      <span className="text-white text-xs font-semibold">{selectedItinerary.itinerary.stops.length} stops</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stops */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {selectedItinerary.itinerary.stops.map((stop, index) => (
+                  <div key={stop.id || index} className="bg-white/5 rounded-xl p-3 border border-white/10">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center shrink-0">
+                        <span className="text-white font-bold text-sm">{index + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-white/40 text-[10px]">{stop.arrivalTime}</span>
+                          <span className="text-white/20">→</span>
+                          <span className="text-white/30 text-[10px]">{stop.departureTime}</span>
+                        </div>
+                        <h4 className="text-white font-semibold text-sm">{stop.name}</h4>
+                        {stop.whyVisit && (
+                          <p className="text-white/40 text-xs mt-1 line-clamp-2">{stop.whyVisit}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-emerald-400 font-bold text-sm">{stop.cost || 'Free'}</div>
+                        <div className="text-white/30 text-[10px]">{stop.duration}</div>
+                      </div>
+                    </div>
+                    
+                    {/* Transit to next */}
+                    {stop.transitToNext && index < selectedItinerary.itinerary.stops.length - 1 && (
+                      <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2 text-xs text-white/40">
+                        <i className={`fa-solid ${stop.transitToNext.method === 'walk' ? 'fa-person-walking' : 'fa-train-subway'} text-orange-500/60`}></i>
+                        <span>{stop.transitToNext.duration}</span>
+                        <span className="text-white/20">•</span>
+                        <span className="truncate">{stop.transitToNext.instructions}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Budget Footer */}
+              <div className="p-4 border-t border-white/10 shrink-0 bg-black/30">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 text-center">
+                    <div className="text-orange-500 font-bold">${Math.round(selectedItinerary.budget.food)}</div>
+                    <div className="text-white/40 text-[9px] uppercase">Food</div>
+                  </div>
+                  <div className="w-px h-8 bg-white/10"></div>
+                  <div className="flex-1 text-center">
+                    <div className="text-orange-500 font-bold">${Math.round(selectedItinerary.budget.activity)}</div>
+                    <div className="text-white/40 text-[9px] uppercase">Activities</div>
+                  </div>
+                  <div className="w-px h-8 bg-white/10"></div>
+                  <div className="flex-1 text-center">
+                    <div className="text-orange-500 font-bold">${Math.round(selectedItinerary.budget.transit)}</div>
+                    <div className="text-white/40 text-[9px] uppercase">Transit</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -997,10 +1242,15 @@ function MapPage() {
           setDetailedItinerary(response.itinerary);
           setBudget(response.budget);
 
+          // Save to localStorage
+          saveItinerary(response.itinerary, response.budget, query);
+          addRecentSearch(query);
+          console.log('[App] Itinerary saved to localStorage');
+
           // Speak a summary of the itinerary
           speak(`I've created an itinerary for you: ${response.itinerary.title}. ${response.itinerary.overview} Click the speaker icon to hear the full details.`);
 
-          // Set route on map
+          // Set route on map with full stop data for rich popups
           const routePoints = [
             { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
             ...response.itinerary.stops
@@ -1009,7 +1259,15 @@ function MapPage() {
                 lat: stop.coordinates!.lat,
                 lng: stop.coordinates!.lng,
                 name: stop.name,
-                type: stop.type
+                type: stop.type,
+                // Include rich data for popups
+                arrivalTime: stop.arrivalTime,
+                departureTime: stop.departureTime,
+                duration: stop.duration,
+                cost: stop.cost,
+                whyVisit: stop.whyVisit,
+                whatToDo: stop.whatToDo,
+                proTip: stop.proTip,
               }))
           ];
 
@@ -1142,19 +1400,31 @@ function MapPage() {
         // Update budget
         setBudget(response.budget);
 
-        // Set route data for map from detailed itinerary stops
-        // Map expects "points" array with {lat, lng, name, type} format
+        // Save to localStorage
+        const itemNames = savedItems.map(item => item.name).join(', ');
+        saveItinerary(response.itinerary, response.budget, itemNames);
+        console.log('[App] Itinerary saved to localStorage');
+
+        // Set route data for map from detailed itinerary stops with full data for rich popups
         const routePoints = [
           // Start with user location
           { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
-          // Then all the itinerary stops
+          // Then all the itinerary stops with rich data
           ...response.itinerary.stops
             .filter(stop => stop.coordinates)
             .map(stop => ({
               lat: stop.coordinates!.lat,
               lng: stop.coordinates!.lng,
               name: stop.name,
-              type: stop.type
+              type: stop.type,
+              // Include rich data for popups
+              arrivalTime: stop.arrivalTime,
+              departureTime: stop.departureTime,
+              duration: stop.duration,
+              cost: stop.cost,
+              whyVisit: stop.whyVisit,
+              whatToDo: stop.whatToDo,
+              proTip: stop.proTip,
             }))
         ];
 

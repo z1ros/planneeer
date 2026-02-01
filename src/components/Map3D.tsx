@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CitySettings } from '../App';
 // NYC Data
 import nycRoutes from '../data/nycSubwayRoutes.json';
 import nycStations from '../data/nycSubwayStations.json';
+import { eventsToGeoJSON, fetchEvents } from '../services/eventsApi';
 import { fetchLandmarks, landmarksToGeoJSON } from '../services/landmarksApi';
-import { fetchNYCRestaurants, nycRestaurantsToGeoJSON } from '../services/restaurantApi';
-import { fetchEvents, eventsToGeoJSON } from '../services/eventsApi';
-import { fetchAllMTAFeeds, MTAEntity, fetchLineStatuses, LineStatusMap } from '../services/mtaApi';
+import { fetchLineStatuses, LineStatusMap } from '../services/mtaApi';
 import { SearchResponse } from '../services/plannerApi';
+import { fetchNYCRestaurants, nycRestaurantsToGeoJSON } from '../services/restaurantApi';
 import './Map3D.css';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -170,10 +170,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
   const animationRef = useRef<number | null>(null);
   const mbtaIntervalRef = useRef<number | null>(null);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const pulsePhaseRef = useRef(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const selectedBuildingRef = useRef<string | null>(null);
 
   // Real-time Line Status (MTA)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [lineStatuses, setLineStatuses] = useState<LineStatusMap>({});
   const lineStatusesRef = useRef<LineStatusMap>({});
 
@@ -226,7 +229,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
   // LERP State: Stores current "flight" data for every vehicle
   // id -> { startLng, startLat, endLng, endLat, startBearing, endBearing, startTime, duration }
-  const vehicleLerpRef = useRef<Map<string, any>>(new Map());
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const vehicleLerpRef = useRef<Map<string, unknown>>(new Map());
 
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -261,7 +265,9 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     };
   }, [onAddToItinerary]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [systemStress, setSystemStress] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isExpanded, setIsExpanded] = useState(false);
   const [internalActiveLayer, setInternalActiveLayer] = useState<LayerType>(null);
 
@@ -275,6 +281,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [is3DMode, setIs3DMode] = useState(true);
   const [activeSearchMarkers, setActiveSearchMarkers] = useState<mapboxgl.Marker[]>([]);
 
@@ -284,10 +291,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
   const showEvents = activeLayer === 'events';
   const showLandmarks = activeLayer === 'landmarks';
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedItineraryDay, setSelectedItineraryDay] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showItinerary, setShowItinerary] = useState(false);
 
   // Generate vascular light trail segments with speed-linked pulse
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const generateLightTrails = useCallback((
     coordinates: [number, number][],
     routeColor: string,
@@ -861,57 +871,58 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${props.photoName}&key=${GOOGLE_MAPS_API_KEY}`) : '';
 
         const popupHTML = `
-          <div class="event-popup" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+          <div class="event-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; background: linear-gradient(to bottom, rgba(30,35,45,0.98), rgba(20,25,35,0.99)); backdrop-filter: blur(20px); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);">
             
-            ${photoUrl ? `<div class="popup-photo" style="width: 100%; height: 140px; background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%); border-radius: 8px 8px 0 0; margin: -5px -16px 12px -16px; position: relative; overflow: hidden;">
+            ${photoUrl ? `<div style="width: 100%; height: 140px; background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); position: relative; overflow: hidden;">
               <img src="${photoUrl}" style="width: 100%; height: 100%; object-fit: cover;" 
-                onerror="this.parentElement.style.height='0'; this.parentElement.style.margin='0';" />
-            </div>` : ''}
+                onerror="this.parentElement.style.background='linear-gradient(135deg, #ec4899 0%, #db2777 100%)';" />
+              <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, rgba(20,25,35,0.95) 100%);"></div>
+            </div>` : `<div style="height: 60px; background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); position: relative;"><div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, rgba(20,25,35,0.95) 100%);"></div></div>`}
 
-            <div style="padding: 4px 0;">
-              <div style="display: inline-block; padding: 5px 12px; background: #000; color: #fff; border-radius: 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px;">
-                Event
+            <div style="padding: 16px;">
+              <div style="display: inline-block; padding: 5px 12px; background: rgba(236,72,153,0.2); color: #ec4899; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; border: 1px solid rgba(236,72,153,0.3);">
+                <i class="fa-solid fa-star" style="margin-right: 4px;"></i> Event
               </div>
               
-              <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #000; line-height: 1.3; letter-spacing: -0.3px;">
+              <h3 style="margin: 0 0 14px 0; font-size: 18px; font-weight: 700; color: #fff; line-height: 1.3; letter-spacing: -0.3px;">
                 ${props.title}
               </h3>
               
-              <div style="margin: 12px 0; display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 15px;">📅</span>
+              <div style="margin: 14px 0; display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                <i class="fa-solid fa-calendar" style="font-size: 16px; color: #f97316;"></i>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span style="font-size: 14px; color: #000; font-weight: 700;">${startDate}</span>
-                  <span style="font-size: 12px; color: #666; font-weight: 500;">${startTime} - ${endTime}</span>
+                  <span style="font-size: 14px; color: #fff; font-weight: 600;">${startDate}</span>
+                  <span style="font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 500;">${startTime} - ${endTime}</span>
                 </div>
               </div>
               
-              <div style="margin: 12px 0; display: flex; align-items: start; gap: 10px;">
-                <span style="font-size: 15px; color: #000; margin-top: 2px;">📍</span>
-                <span style="font-size: 13px; color: #000; font-weight: 600; line-height: 1.5;">${props.venueName}</span>
+              <div style="margin: 12px 0; display: flex; align-items: center; gap: 12px;">
+                <i class="fa-solid fa-location-dot" style="font-size: 16px; color: #ec4899;"></i>
+                <span style="font-size: 13px; color: rgba(255,255,255,0.8); font-weight: 500; line-height: 1.5;">${props.venueName}</span>
               </div>
               
-              ${props.description ? `<div style="margin: 14px 0; padding: 12px; background: #fafafa; border-radius: 6px; border-left: 3px solid #000;">
-                <div style="font-size: 13px; color: #1a1a1a; line-height: 1.6; font-weight: 500;">
+              ${props.description ? `<div style="margin: 14px 0; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px; border-left: 3px solid #f97316;">
+                <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6; font-weight: 400;">
                   ${props.description}
                 </div>
               </div>` : ''}
               
               ${props.price && props.price !== 'Free' ? `<div style="margin: 12px 0; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 11px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Price:</span>
-                <span style="font-size: 14px; color: #000; font-weight: 700;">${props.price}</span>
+                <span style="font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px;">Price:</span>
+                <span style="font-size: 14px; color: #f97316; font-weight: 700;">${props.price}</span>
               </div>` : props.price === 'Free' ? `<div style="margin: 12px 0;">
-                <span style="display: inline-block; padding: 4px 10px; background: #f0f0f0; color: #000; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px;">FREE EVENT</span>
+                <span style="display: inline-block; padding: 5px 12px; background: rgba(34,197,94,0.2); color: #22c55e; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; border: 1px solid rgba(34,197,94,0.3);">FREE EVENT</span>
               </div>` : ''}
               
-              <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e5e7eb; display: flex; gap: 8px;">
+              <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px;">
                 <button 
                   onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.title || '').replace(/'/g, "\\'")}', 'event', '${(props.description || '').replace(/'/g, "\\'")}', '${(props.venueName || '').replace(/'/g, "\\'")}', '${props.price || ''}', ${coordinates[1]}, ${coordinates[0]})"
-                  style="flex: 1; text-align: center; padding: 11px 16px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s;"
-                  ${savedItemIdsRef.current.includes(props.id) ? 'disabled style="flex: 1; text-align: center; padding: 11px 16px; background: #22c55e; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: default;"' : ''}
+                  style="flex: 1; text-align: center; padding: 12px 16px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s;"
+                  ${savedItemIdsRef.current.includes(props.id) ? 'disabled style="flex: 1; text-align: center; padding: 12px 16px; background: #22c55e; color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: default;"' : ''}
                 >
                   ${savedItemIdsRef.current.includes(props.id) ? '✓ Added' : '+ Add to Itinerary'}
                 </button>
-                ${props.sourceUrl ? `<a href="${props.sourceUrl}" target="_blank" style="padding: 11px 16px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700;">
+                ${props.sourceUrl ? `<a href="${props.sourceUrl}" target="_blank" style="padding: 12px 16px; background: rgba(255,255,255,0.1); color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15);">
                   Details
                 </a>` : ''}
               </div>
@@ -919,7 +930,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           </div>
         `;
 
-        new mapboxgl.Popup({ maxWidth: '340px', className: 'event-popup-container' })
+        new mapboxgl.Popup({ maxWidth: '360px', className: 'dark-popup' })
           .setLngLat(coordinates)
           .setHTML(popupHTML)
           .addTo(mapInstance);
@@ -1013,7 +1024,11 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      // Walking paths - animated dashed line with glow
+      // ===========================================
+      // WALKING PATHS - Modern gradient dashed line
+      // ===========================================
+      
+      // Walking outer glow (soft orange ambient)
       mapInstance.addLayer({
         id: 'itinerary-walking-glow',
         type: 'line',
@@ -1025,13 +1040,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['coalesce', ['get', 'routeColor'], '#10b981'],
-          'line-width': 14,
-          'line-blur': 6,
-          'line-opacity': 0.4,
+          'line-color': '#f97316',
+          'line-width': 20,
+          'line-blur': 12,
+          'line-opacity': 0.3,
         },
       });
 
+      // Walking main line (sleek dotted pattern)
       mapInstance.addLayer({
         id: 'itinerary-walking',
         type: 'line',
@@ -1043,14 +1059,18 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['coalesce', ['get', 'routeColor'], '#10b981'],
-          'line-width': 6,
-          'line-dasharray': [0.5, 1.5],
+          'line-color': '#f97316',
+          'line-width': 5,
+          'line-dasharray': [0, 2],
           'line-opacity': 1,
         },
       });
 
-      // Transit paths - thick solid lines with MTA colors
+      // ===========================================
+      // TRANSIT PATHS - Premium subway-style lines
+      // ===========================================
+      
+      // Transit outer glow (dynamic color)
       mapInstance.addLayer({
         id: 'itinerary-transit-glow',
         type: 'line',
@@ -1062,14 +1082,32 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['coalesce', ['get', 'routeColor'], '#EE352E'],
-          'line-width': 18,
-          'line-blur': 6,
-          'line-opacity': 0.5,
+          'line-color': ['coalesce', ['get', 'routeColor'], '#f97316'],
+          'line-width': 24,
+          'line-blur': 10,
+          'line-opacity': 0.4,
         },
       });
 
-      // Transit paths - solid thick line with subway color
+      // Transit border (dark outline)
+      mapInstance.addLayer({
+        id: 'itinerary-transit-border',
+        type: 'line',
+        source: 'itinerary-routes',
+        filter: ['==', ['get', 'mode'], 'transit'],
+        layout: {
+          'visibility': 'none',
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#1a1a2e',
+          'line-width': 10,
+          'line-opacity': 1,
+        },
+      });
+
+      // Transit main line (subway color)
       mapInstance.addLayer({
         id: 'itinerary-transit',
         type: 'line',
@@ -1081,13 +1119,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'line-join': 'round',
         },
         paint: {
-          'line-color': ['coalesce', ['get', 'routeColor'], '#EE352E'],
-          'line-width': 8,
+          'line-color': ['coalesce', ['get', 'routeColor'], '#f97316'],
+          'line-width': 6,
           'line-opacity': 1,
         },
       });
 
-      // Transit center line (white stripe for subway look)
+      // Transit center highlight (white shine)
       mapInstance.addLayer({
         id: 'itinerary-transit-center',
         type: 'line',
@@ -1100,8 +1138,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         },
         paint: {
           'line-color': '#ffffff',
-          'line-width': 2,
-          'line-opacity': 0.3,
+          'line-width': 1.5,
+          'line-opacity': 0.4,
         },
       });
 
@@ -1253,9 +1291,11 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
         // Get stop details
         const stopName = props.name || 'Stop';
-        const stopTime = props.time || '';
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _stopTime = props.time || '';
         const stopType = props.type || 'visit';
-        const stopNumber = props.stopNumber || '';
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _stopNumber = props.stopNumber || '';
 
         // Determine icon and color based on type
         let typeIcon = '📍';
@@ -1319,7 +1359,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                     `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${p.photoName}&key=${GOOGLE_MAPS_API_KEY}`;
               }
             }
-          } catch (err) {
+          } catch {
             console.log('[Itinerary] Could not find matching place for:', cleanName);
           }
         }
@@ -1451,110 +1491,66 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${props.photoName}&key=${GOOGLE_MAPS_API_KEY}`;
         }
 
-        // Build rating stars
+        // Build rating
         const rating = googleRating || 0;
-        const fullStars = Math.floor(rating);
-        const hasHalfStar = rating % 1 >= 0.5;
-        let starsHTML = '';
-        for (let i = 0; i < 5; i++) {
-          if (i < fullStars) {
-            starsHTML += '<span style="color: #000;">★</span>';
-          } else if (i === fullStars && hasHalfStar) {
-            starsHTML += '<span style="color: #000;">⯨</span>';
-          } else {
-            starsHTML += '<span style="color: #d1d5db;">★</span>';
-          }
-        }
-
-        // Get category icon
-        const categoryIcon = (() => {
-          const cat = (props.category || '').toLowerCase();
-          if (cat.includes('historic')) return '🏛️';
-          if (cat.includes('museum')) return '🎨';
-          if (cat.includes('park')) return '🌳';
-          if (cat.includes('monument')) return '🗽';
-          if (cat.includes('scenic')) return '🌅';
-          if (cat.includes('residential')) return '🏠';
-          return '📍';
-        })();
-
-        // Photo section
-        const photoHTML = photoUrl ?
-          `<div class="popup-photo" style="width: 100%; height: 140px; background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); border-radius: 8px 8px 0 0; margin: -16px -16px 12px -16px; position: relative; overflow: hidden;">
-            <img src="${photoUrl}" 
-                 alt="${props.name}"
-                 style="width: 100%; height: 100%; object-fit: cover;"
-                 onerror="this.parentElement.style.background='linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'; this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-            <div style="display: none; position: absolute; inset: 0; align-items: center; justify-content: center;">
-              <span style="font-size: 48px;">${categoryIcon}</span>
-            </div>
-            ${rating > 0 ? `<div style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 6px; font-size: 12px; color: #000; font-weight: 700; border: 1px solid #e5e7eb;">
-              ${starsHTML} <span style="margin-left: 4px;">${rating.toFixed(1)}</span>
-            </div>` : ''}
-          </div>` :
-          `<div class="popup-photo-placeholder" style="width: 100%; height: 120px; background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); border-radius: 8px 8px 0 0; margin: -16px -16px 12px -16px; display: flex; align-items: center; justify-content: center;">
-            <span style="font-size: 48px;">${categoryIcon}</span>
-          </div>`;
-
+        
         // Address line
         const address = googleAddress || (props.neighborhood ? `${props.neighborhood}, ${props.borough}` : props.borough || 'NYC');
 
         // Description
         const description = props.description || '';
 
-        // Tags
-        const tags = props.tags ? props.tags.split(',').map((t: string) => t.trim()).slice(0, 4) : [];
-        const tagBadges = tags.map((tag: string) => `<span style="display: inline-block; padding: 4px 8px; background: #f3e8ff; color: #7c3aed; border-radius: 4px; font-size: 11px; font-weight: 600;">${tag}</span>`).join('');
-
-        // Build popup HTML
+        // Build popup HTML - Dark UI matching theme
         const popupHTML = `
-          <div class="landmark-popup" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
-            ${photoHTML}
+          <div class="landmark-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; background: linear-gradient(to bottom, rgba(30,35,45,0.98), rgba(20,25,35,0.99)); backdrop-filter: blur(20px); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);">
             
-            <div>
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="display: inline-block; padding: 4px 10px; background: #8b5cf6; color: #fff; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
-                  ${props.category || 'Landmark'}
-                </span>
+            ${photoUrl ? `<div style="width: 100%; height: 140px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); position: relative; overflow: hidden;">
+              <img src="${photoUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none';" />
+              <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, rgba(20,25,35,0.95) 100%);"></div>
+              ${rating > 0 ? `<div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 8px; font-size: 12px; color: #fff; font-weight: 600; border: 1px solid rgba(255,255,255,0.1);">
+                <i class="fa-solid fa-star" style="color: #fbbf24; margin-right: 4px;"></i>${rating.toFixed(1)}
+              </div>` : ''}
+            </div>` : `<div style="height: 60px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); position: relative;"><div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, rgba(20,25,35,0.95) 100%);"></div></div>`}
+            
+            <div style="padding: 16px;">
+              <div style="display: inline-block; padding: 5px 12px; background: rgba(139,92,246,0.2); color: #a78bfa; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; border: 1px solid rgba(139,92,246,0.3);">
+                <i class="fa-solid fa-camera" style="margin-right: 4px;"></i> ${props.category || 'Landmark'}
               </div>
               
-              <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #000; line-height: 1.3;">
+              <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 700; color: #fff; line-height: 1.3;">
                 ${props.name}
               </h3>
               
-              <div style="margin: 8px 0; display: flex; align-items: start; gap: 8px;">
-                <span style="font-size: 14px; color: #000; margin-top: 1px;">📍</span>
-                <span style="font-size: 13px; color: #000; font-weight: 500; line-height: 1.4;">${address}</span>
+              <div style="margin: 12px 0; display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-location-dot" style="font-size: 14px; color: #8b5cf6;"></i>
+                <span style="font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500; line-height: 1.4;">${address}</span>
               </div>
               
               ${description ? `
-                <div style="margin: 10px 0; font-size: 13px; color: #4a4a4a; line-height: 1.5;">
-                  ${description}
+                <div style="margin: 12px 0; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px; border-left: 3px solid #8b5cf6;">
+                  <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
+                    ${description}
+                  </div>
                 </div>
               ` : ''}
               
               ${props.bestTime ? `
-                <div style="margin: 8px 0; font-size: 12px; color: #666;">
-                  <strong>Best time:</strong> ${props.bestTime}
+                <div style="margin: 10px 0; display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-clock" style="font-size: 12px; color: #f97316;"></i>
+                  <span style="font-size: 12px; color: rgba(255,255,255,0.6);"><strong style="color: rgba(255,255,255,0.8);">Best time:</strong> ${props.bestTime}</span>
                 </div>
               ` : ''}
               
               ${props.proTip ? `
-                <div style="margin: 8px 0; padding: 8px 10px; background: #fef3c7; border-radius: 6px; font-size: 12px; color: #92400e;">
-                  💡 <strong>Pro tip:</strong> ${props.proTip}
+                <div style="margin: 12px 0; padding: 10px 12px; background: rgba(251,191,36,0.15); border-radius: 8px; font-size: 12px; color: #fbbf24; border: 1px solid rgba(251,191,36,0.3);">
+                  <i class="fa-solid fa-lightbulb" style="margin-right: 6px;"></i> <strong>Pro tip:</strong> ${props.proTip}
                 </div>
               ` : ''}
               
-              ${tagBadges ? `
-                <div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 6px;">
-                  ${tagBadges}
-                </div>
-              ` : ''}
-              
-              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb;">
+              <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
                 <button 
                   onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', 'landmark', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '', ${lat}, ${lng})"
-                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #8b5cf6, #7c3aed)'}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 8px;"
+                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #f97316, #ea580c)'}; color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 10px;"
                   ${savedItemIdsRef.current.includes(props.id) ? 'disabled' : ''}
                 >
                   ${savedItemIdsRef.current.includes(props.id) ? '✓ Added to Itinerary' : '+ Add to Itinerary'}
@@ -1562,13 +1558,13 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 <div style="display: flex; gap: 8px;">
                   <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
                      target="_blank" 
-                     style="flex: 1; text-align: center; padding: 10px 14px; background: #8b5cf6; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700;">
-                    Directions
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: rgba(255,255,255,0.1); color: #fff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15);">
+                    <i class="fa-solid fa-diamond-turn-right" style="margin-right: 4px;"></i> Directions
                   </a>
                   <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC landmark')}" 
                      target="_blank" 
-                     style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #8b5cf6; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700; border: 2px solid #8b5cf6;">
-                    Learn More
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: rgba(139,92,246,0.2); color: #a78bfa; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(139,92,246,0.3);">
+                    <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i> Learn More
                   </a>
                 </div>
               </div>
@@ -1579,7 +1575,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         // Remove loading popup and show final popup
         loadingPopup.remove();
 
-        new mapboxgl.Popup({ maxWidth: '320px', className: 'landmark-popup-container' })
+        new mapboxgl.Popup({ maxWidth: '360px', className: 'dark-popup' })
           .setLngLat(coordinates)
           .setHTML(popupHTML)
           .addTo(mapInstance);
@@ -1643,40 +1639,6 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
         // Use Google rating if available, otherwise use popularity score converted to 5-star scale
         const rating = googleRating || (props.popularity ? (props.popularity / 100) * 5 : 0);
-        const fullStars = Math.floor(rating);
-        const hasHalfStar = rating % 1 >= 0.5;
-        let starsHTML = '';
-        for (let i = 0; i < 5; i++) {
-          if (i < fullStars) {
-            starsHTML += '<span style="color: #000;">★</span>';
-          } else if (i === fullStars && hasHalfStar) {
-            starsHTML += '<span style="color: #000;">⯨</span>';
-          } else {
-            starsHTML += '<span style="color: #d1d5db;">★</span>';
-          }
-        }
-
-        // Price level
-        const priceRange = props.priceRange || '';
-        const priceHTML = priceRange ? `<span style="color: #000; font-weight: 700; font-size: 14px;">${priceRange}</span>` : '';
-
-        // Tags/cuisine badges
-        const tags = props.tags ? props.tags.split(',').map((t: string) => t.trim()).slice(0, 4) : [];
-        const cuisineBadge = props.cuisine ? `<span class="badge" style="background: #000; color: #fff;">${props.cuisine}</span>` : '';
-        const tagBadges = tags.map((tag: string) => `<span class="badge">${tag}</span>`).join('');
-
-        // Photo section
-        const photoHTML = photoUrl ?
-          `<div class="popup-photo" style="width: 100%; height: 140px; background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%); border-radius: 8px 8px 0 0; margin: -16px -16px 12px -16px; position: relative; overflow: hidden;">
-            <img src="${photoUrl}" 
-                 alt="${props.name}"
-                 style="width: 100%; height: 100%; object-fit: cover;"
-                 onerror="this.parentElement.style.background='linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%)'; this.style.display='none';" />
-            <div style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 6px; font-size: 12px; color: #000; font-weight: 700; border: 1px solid #e5e7eb;">
-              ${starsHTML} <span style="margin-left: 4px;">${rating.toFixed(1)}</span>
-            </div>
-          </div>`
-          : '';
 
         // Address line
         const address = googleAddress || (props.neighborhood ? `${props.neighborhood}, ${props.borough}` : props.borough || 'NYC');
@@ -1684,55 +1646,52 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         // Description
         const description = props.description || '';
 
-        // Generate place insight
-        const insightHTML = generatePlaceInsightHTML({
-          name: props.name,
-          address: address,
-          rating: rating
-        });
-
-        // Build popup HTML
+        // Build popup HTML - Dark UI matching theme
+        const priceRange = props.priceRange || '';
+        const cuisine = props.cuisine || '';
+        const tags = props.tags ? props.tags.split(',').map((t: string) => t.trim()).slice(0, 4) : [];
+        
         const popupHTML = `
-          <div class="place-popup" style="min-width: 280px; max-width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
-            ${photoHTML}
+          <div class="place-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; background: linear-gradient(to bottom, rgba(30,35,45,0.98), rgba(20,25,35,0.99)); backdrop-filter: blur(20px); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);">
             
-            <div style="padding: ${photoHTML ? '0' : '0'};">
-              <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #000; line-height: 1.3; letter-spacing: -0.3px;">
+            ${photoUrl ? `<div style="width: 100%; height: 140px; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); position: relative; overflow: hidden;">
+              <img src="${photoUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none';" />
+              <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, rgba(20,25,35,0.95) 100%);"></div>
+              <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 8px; font-size: 12px; color: #fff; font-weight: 600; border: 1px solid rgba(255,255,255,0.1);">
+                <i class="fa-solid fa-star" style="color: #fbbf24; margin-right: 4px;"></i>${rating > 0 ? rating.toFixed(1) : 'New'}
+              </div>
+              ${priceRange ? `<div style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); padding: 5px 10px; border-radius: 8px; font-size: 12px; color: #22c55e; font-weight: 700; border: 1px solid rgba(255,255,255,0.1);">${priceRange}</div>` : ''}
+            </div>` : `<div style="height: 60px; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); position: relative;"><div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, rgba(20,25,35,0.95) 100%);"></div></div>`}
+            
+            <div style="padding: 16px;">
+              <h3 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 700; color: #fff; line-height: 1.3; letter-spacing: -0.3px;">
                 ${props.name}
               </h3>
               
-              ${!photoHTML ? `
-                <div style="margin: 8px 0; display: flex; align-items: center; gap: 8px;">
-                  <div style="font-size: 14px; line-height: 1;">${starsHTML}</div>
-                  <span style="font-size: 14px; font-weight: 700; color: #000;">${rating > 0 ? rating.toFixed(1) : 'New'}</span>
-                  ${priceHTML ? `<span style="margin-left: auto;">${priceHTML}</span>` : ''}
-                </div>
-              ` : ''}
-              
-              <div style="margin: 8px 0; display: flex; align-items: start; gap: 8px;">
-                <span style="font-size: 14px; color: #000; margin-top: 1px;">📍</span>
-                <span style="font-size: 13px; color: #000; font-weight: 500; line-height: 1.4;">${address}</span>
+              <div style="margin: 10px 0; display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-location-dot" style="font-size: 14px; color: #f97316;"></i>
+                <span style="font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500; line-height: 1.4;">${address}</span>
               </div>
               
               ${description ? `
-                <div style="margin: 10px 0; font-size: 13px; color: #4a4a4a; line-height: 1.5; font-style: italic;">
-                  "${description}"
+                <div style="margin: 12px 0; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px; border-left: 3px solid #f97316;">
+                  <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6; font-style: italic;">
+                    "${description}"
+                  </div>
                 </div>
               ` : ''}
               
-              ${cuisineBadge || tagBadges ? `
-                <div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 6px;">
-                  ${cuisineBadge}
-                  ${tagBadges}
+              ${cuisine || tags.length > 0 ? `
+                <div style="margin: 12px 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                  ${cuisine ? `<span style="display: inline-block; padding: 5px 10px; background: rgba(249,115,22,0.2); color: #f97316; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid rgba(249,115,22,0.3);">${cuisine}</span>` : ''}
+                  ${tags.map((tag: string) => `<span style="display: inline-block; padding: 5px 10px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); border-radius: 6px; font-size: 11px; font-weight: 500; border: 1px solid rgba(255,255,255,0.1);">${tag}</span>`).join('')}
                 </div>
               ` : ''}
               
-              ${insightHTML}
-              
-              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #e5e7eb;">
+              <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
                 <button 
-                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', 'restaurant', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '${props.priceRange || ''}', ${lat}, ${lng})"
-                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #f97316, #ea580c)'}; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 8px;"
+                  onclick="window.addToItinerary && window.addToItinerary('${props.id}', '${(props.name || '').replace(/'/g, "\\'")}', 'restaurant', '${(description || '').replace(/'/g, "\\'")}', '${(address || '').replace(/'/g, "\\'")}', '${priceRange}', ${lat}, ${lng})"
+                  style="width: 100%; text-align: center; padding: 12px 14px; background: ${savedItemIdsRef.current.includes(props.id) ? '#22c55e' : 'linear-gradient(135deg, #f97316, #ea580c)'}; color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: ${savedItemIdsRef.current.includes(props.id) ? 'default' : 'pointer'}; transition: all 0.2s; margin-bottom: 10px;"
                   ${savedItemIdsRef.current.includes(props.id) ? 'disabled' : ''}
                 >
                   ${savedItemIdsRef.current.includes(props.id) ? '✓ Added to Itinerary' : '+ Add to Itinerary'}
@@ -1740,45 +1699,24 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 <div style="display: flex; gap: 8px;">
                   <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + address)}" 
                      target="_blank" 
-                     style="flex: 1; text-align: center; padding: 10px 14px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700;">
-                    Directions
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: rgba(255,255,255,0.1); color: #fff; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.15);">
+                    <i class="fa-solid fa-diamond-turn-right" style="margin-right: 4px;"></i> Directions
                   </a>
                   <a href="https://www.google.com/search?q=${encodeURIComponent(props.name + ' NYC')}" 
                      target="_blank" 
-                     style="flex: 1; text-align: center; padding: 10px 14px; background: #fff; color: #000; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 700; border: 2px solid #000;">
-                    More Info
+                     style="flex: 1; text-align: center; padding: 10px 14px; background: rgba(249,115,22,0.2); color: #f97316; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(249,115,22,0.3);">
+                    <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i> More Info
                   </a>
                 </div>
               </div>
             </div>
           </div>
-          
-          <style>
-            .badge {
-              display: inline-block;
-              padding: 5px 10px;
-              background: #f5f5f5;
-              color: #000;
-              border-radius: 5px;
-              font-size: 11px;
-              font-weight: 600;
-              border: 1.5px solid #d1d5db;
-              letter-spacing: 0.2px;
-            }
-            .place-popup a:hover {
-              transform: translateY(-1px);
-              box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            }
-            .place-popup a:active {
-              transform: translateY(0);
-            }
-          </style>
         `;
 
         // Remove loading popup and show final popup
         loadingPopup.remove();
 
-        new mapboxgl.Popup({ maxWidth: '340px', className: 'place-popup-container' })
+        new mapboxgl.Popup({ maxWidth: '360px', className: 'dark-popup' })
           .setLngLat(coordinates)
           .setHTML(popupHTML)
           .addTo(mapInstance);
@@ -2270,6 +2208,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     return () => {
       if (animationId) cancelAnimationFrame(animationId);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
   // ===========================================
@@ -2324,7 +2263,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           map.current.setLayoutProperty(layer, 'visibility', vis);
           console.log(`[Transit] ${layer} visibility set to ${vis}`);
         }
-      } catch (error) {
+      } catch {
         // Silently skip layers that don't exist (some may be optional)
       }
     });
@@ -2490,13 +2429,18 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         });
 
         // Hide itinerary layers
-        ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow',
-          'itinerary-transit', 'itinerary-stops-circle', 'itinerary-stops-icon',
+        ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit-border',
+          'itinerary-transit', 'itinerary-transit-center', 'itinerary-stops-circle', 'itinerary-stops-icon',
           'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
             if (map.current?.getLayer(layer)) {
               map.current.setLayoutProperty(layer, 'visibility', 'none');
             }
           });
+
+        // Remove Font Awesome itinerary markers when clearing
+        document.querySelectorAll('.custom-marker-itinerary').forEach(el => {
+          el.remove();
+        });
 
         console.log('[Itinerary] Cleared - restoring other layers');
       }
@@ -2545,13 +2489,280 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         });
       }
 
-      // Show stop layers immediately - including new glow and highlight layers
+      // HIDE old circle/icon layers - we're using Font Awesome markers instead
       ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon',
         'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
           if (mapInstance.getLayer(layer)) {
-            mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
+            mapInstance.setLayoutProperty(layer, 'visibility', 'none');
           }
         });
+
+      // Remove any existing Font Awesome itinerary markers before adding new ones
+      document.querySelectorAll('.custom-marker-itinerary').forEach(el => {
+        el.remove();
+      });
+
+      // Create premium styled location markers for itinerary stops
+      points.forEach((point: any, index: number) => {
+        const el = document.createElement('div');
+        el.className = 'custom-marker custom-marker-itinerary';
+        el.innerHTML = `
+          <div style="position: relative; display: inline-block; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+            <!-- Animated pulse ring -->
+            <div style="position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, rgba(249,115,22,0.4) 0%, transparent 70%); animation: pulse-ring 2s ease-out infinite;"></div>
+            <!-- Outer glow -->
+            <div style="position: absolute; top: -8px; left: -8px; width: 56px; height: 56px; background: radial-gradient(circle, rgba(249,115,22,0.6) 0%, transparent 60%); border-radius: 50%; filter: blur(8px);"></div>
+            <!-- Main pin body -->
+            <div style="position: relative; width: 40px; height: 40px; background: linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid #f97316; box-shadow: 0 4px 20px rgba(249,115,22,0.5), inset 0 1px 0 rgba(255,255,255,0.1);">
+              <!-- Inner circle with number -->
+              <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg); width: 28px; height: 28px; background: linear-gradient(145deg, #f97316 0%, #ea580c 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 2px 4px rgba(255,255,255,0.3), 0 2px 8px rgba(0,0,0,0.3);">
+                <span style="font-size: 14px; font-weight: 800; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">${index + 1}</span>
+              </div>
+            </div>
+            <!-- Pin point shadow -->
+            <div style="position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); width: 16px; height: 4px; background: rgba(0,0,0,0.3); border-radius: 50%; filter: blur(2px);"></div>
+          </div>
+        `;
+        
+        // Add CSS animation for pulse ring
+        if (!document.querySelector('#itinerary-pin-styles')) {
+          const style = document.createElement('style');
+          style.id = 'itinerary-pin-styles';
+          style.textContent = `
+            @keyframes pulse-ring {
+              0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+              100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+            }
+          `;
+          document.head.appendChild(style);
+        }
+        
+        const marker = new mapboxgl.Marker(el)
+          .setLngLat([point.lng, point.lat])
+          .addTo(mapInstance);
+        
+        // Add hover effect
+        el.addEventListener('mouseenter', () => {
+          el.style.transform = 'scale(1.15) translateY(-3px)';
+          el.style.filter = 'brightness(1.1)';
+        });
+        el.addEventListener('mouseleave', () => {
+          el.style.transform = 'scale(1) translateY(0)';
+          el.style.filter = 'brightness(1)';
+        });
+
+        // Add click handler for popup
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          
+          // Get type icon and color
+          const typeConfig: { [key: string]: { icon: string; color: string; label: string; emoji: string } } = {
+            'start': { icon: 'fa-location-dot', color: '#10b981', label: 'Starting Point', emoji: '📍' },
+            'food': { icon: 'fa-utensils', color: '#f97316', label: 'Restaurant', emoji: '🍽️' },
+            'landmark': { icon: 'fa-landmark', color: '#8b5cf6', label: 'Landmark', emoji: '🏛️' },
+            'event': { icon: 'fa-calendar-star', color: '#ec4899', label: 'Event', emoji: '🎭' },
+            'activity': { icon: 'fa-person-running', color: '#3b82f6', label: 'Activity', emoji: '🎯' },
+          };
+          const config = typeConfig[point.type] || { icon: 'fa-map-pin', color: '#f97316', label: 'Stop', emoji: '📌' };
+          
+          // Calculate next stop info
+          const nextStop = index < points.length - 1 ? points[index + 1] : null;
+          
+          // Time display - format arrival and departure times
+          const timeDisplay = point.arrivalTime && point.departureTime 
+            ? `${point.arrivalTime} → ${point.departureTime}`
+            : point.arrivalTime || '';
+          
+          // Google Maps URLs
+          const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(point.name)}`;
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`;
+          const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.lat},${point.lng}`;
+          
+          // For start point, show minimal popup
+          if (point.type === 'start') {
+            const startPopupHTML = `
+              <div class="itinerary-stop-popup" style="min-width: 220px; max-width: 260px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+                <div style="height: 4px; background: linear-gradient(90deg, #10b981, #10b98180);"></div>
+                <div style="padding: 16px;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(145deg, #10b981, #10b981cc); border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16,185,129,0.4);">
+                      <i class="fa-solid fa-flag-checkered" style="font-size: 18px; color: #fff;"></i>
+                    </div>
+                    <div>
+                      <h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #fff;">Your Starting Point</h3>
+                      <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.5);">Your adventure begins here!</p>
+                    </div>
+                  </div>
+                </div>
+                <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.06);">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-arrow-right" style="font-size: 10px; color: #10b981;"></i>
+                    <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Next: <span style="color: #fff; font-weight: 500;">${nextStop?.name || 'End'}</span></span>
+                  </div>
+                </div>
+              </div>
+            `;
+            
+            new mapboxgl.Popup({ 
+              maxWidth: '280px', 
+              className: 'dark-popup itinerary-popup',
+              closeButton: true,
+              closeOnClick: false,
+              offset: [0, -25],
+              focusAfterOpen: false
+            })
+              .setLngLat([point.lng, point.lat])
+              .setHTML(startPopupHTML)
+              .addTo(mapInstance);
+            return;
+          }
+          
+          const popupHTML = `
+            <div class="itinerary-stop-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+              
+              <!-- Accent bar at top -->
+              <div style="height: 4px; background: linear-gradient(90deg, ${config.color}, ${config.color}80);"></div>
+              
+              <!-- Header with time range -->
+              <div style="padding: 16px 16px 12px; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);">
+                <!-- Time range banner -->
+                ${timeDisplay ? `
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: ${config.color}15; border-radius: 8px; border: 1px solid ${config.color}30;">
+                    <i class="fa-solid fa-clock" style="font-size: 12px; color: ${config.color};"></i>
+                    <span style="font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.5px;">${timeDisplay}</span>
+                  </div>
+                ` : ''}
+                
+                <div style="display: flex; align-items: flex-start; gap: 14px;">
+                  <!-- Stop number badge -->
+                  <div style="position: relative;">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(145deg, ${config.color}, ${config.color}cc); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px ${config.color}50, inset 0 1px 0 rgba(255,255,255,0.2);">
+                      <span style="font-size: 20px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">${index + 1}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Title and type -->
+                  <div style="flex: 1; min-width: 0;">
+                    <h3 style="margin: 0 0 6px; font-size: 16px; font-weight: 700; color: #fff; line-height: 1.25;">${point.name}</h3>
+                    <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: ${config.color}20; border-radius: 20px; border: 1px solid ${config.color}40;">
+                      <i class="fa-solid ${config.icon}" style="font-size: 10px; color: ${config.color};"></i>
+                      <span style="font-size: 11px; color: ${config.color}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">${config.label}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Quick stats row -->
+              <div style="padding: 0 16px 12px; display: flex; gap: 8px;">
+                ${point.duration ? `
+                  <div style="flex: 1; padding: 10px 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                    <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 2px;">${point.duration}</div>
+                    <div style="font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;">Duration</div>
+                  </div>
+                ` : ''}
+                ${point.cost ? `
+                  <div style="flex: 1; padding: 10px 12px; background: rgba(16,185,129,0.08); border-radius: 10px; border: 1px solid rgba(16,185,129,0.2); text-align: center;">
+                    <div style="font-size: 15px; font-weight: 700; color: #10b981; margin-bottom: 2px;">${point.cost}</div>
+                    <div style="font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;">Est. Cost</div>
+                  </div>
+                ` : ''}
+              </div>
+              
+              <!-- What to do section -->
+              ${point.whatToDo ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                      <i class="fa-solid fa-lightbulb" style="font-size: 11px; color: ${config.color};"></i>
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">What to do</span>
+                    </div>
+                    <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5;">${point.whatToDo}</p>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Why visit section -->
+              ${point.whyVisit ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                      <i class="fa-solid fa-star" style="font-size: 11px; color: #fbbf24;"></i>
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Why visit</span>
+                    </div>
+                    <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.7); line-height: 1.5;">${point.whyVisit}</p>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Pro tip -->
+              ${point.proTip ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 10px 12px; background: linear-gradient(135deg, rgba(251,191,36,0.1) 0%, rgba(251,191,36,0.05) 100%); border-radius: 10px; border: 1px solid rgba(251,191,36,0.2);">
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                      <span style="font-size: 14px;">💡</span>
+                      <div>
+                        <span style="font-size: 10px; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Pro Tip</span>
+                        <p style="margin: 4px 0 0; font-size: 12px; color: rgba(255,255,255,0.8); line-height: 1.4;">${point.proTip}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Next stop preview -->
+              ${nextStop ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 10px 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Next Stop</span>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 12px; color: rgba(255,255,255,0.8); font-weight: 500;">${nextStop.name}</span>
+                        <i class="fa-solid fa-arrow-right" style="font-size: 10px; color: ${config.color};"></i>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Action buttons -->
+              <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; gap: 8px;">
+                  <a href="${directionsUrl}" target="_blank" rel="noopener" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 12px; background: linear-gradient(145deg, ${config.color}, ${config.color}dd); border-radius: 10px; color: #fff; text-decoration: none; font-size: 12px; font-weight: 600; transition: all 0.2s; box-shadow: 0 2px 8px ${config.color}40;">
+                    <i class="fa-solid fa-diamond-turn-right" style="font-size: 12px;"></i>
+                    Get Directions
+                  </a>
+                  <a href="${googleMapsUrl}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: rgba(255,255,255,0.08); border-radius: 10px; color: rgba(255,255,255,0.7); text-decoration: none; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1);" title="Open in Google Maps">
+                    <i class="fa-solid fa-map-location-dot" style="font-size: 14px;"></i>
+                  </a>
+                  <a href="${streetViewUrl}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: rgba(255,255,255,0.08); border-radius: 10px; color: rgba(255,255,255,0.7); text-decoration: none; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1);" title="Street View">
+                    <i class="fa-solid fa-street-view" style="font-size: 14px;"></i>
+                  </a>
+                </div>
+                
+                <!-- Progress indicator -->
+                <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
+                  <div style="flex: 1; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                    <div style="width: ${((index + 1) / points.length) * 100}%; height: 100%; background: linear-gradient(90deg, ${config.color}, ${config.color}80); border-radius: 2px;"></div>
+                  </div>
+                  <span style="font-size: 10px; color: rgba(255,255,255,0.4); font-weight: 500;">Stop ${index}/${points.length - 1}</span>
+                </div>
+              </div>
+            </div>
+          `;
+
+          new mapboxgl.Popup({ 
+            maxWidth: '360px', 
+            className: 'dark-popup itinerary-popup',
+            closeButton: true,
+            closeOnClick: false,  // Allow multiple popups to stay open
+            offset: [0, -25],
+            focusAfterOpen: false
+          })
+            .setLngLat([point.lng, point.lat])
+            .setHTML(popupHTML)
+            .addTo(mapInstance);
+        });
+      });
 
       // Fit map to show all points
       if (points.length > 1) {
@@ -2661,7 +2872,6 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               // 1. Walk to station
               const walkToStation = await getWalkingRoute(from, fromStation.station);
               if (walkToStation) {
-                const walkMin = Math.round(walkToStation.duration / 60);
                 allRouteFeatures.push({
                   type: 'Feature',
                   geometry: walkToStation.geometry,
@@ -2746,7 +2956,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           }
 
           // Show route layers
-          ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit', 'itinerary-transit-center'].forEach(layer => {
+          ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit-border', 'itinerary-transit', 'itinerary-transit-center'].forEach(layer => {
             if (mapInstance.getLayer(layer)) {
               mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
             }
@@ -2954,7 +3164,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     console.log('[Itinerary] Processing schedule with', schedule.length, 'steps');
     console.log('[Itinerary] Location lookup has', locationLookup.size, 'entries');
 
-    schedule.forEach((step: any, idx: number) => {
+    schedule.forEach((step: any) => {
       // Handle transit steps - store for next location connection
       if (step.type === 'transit') {
         const mode = step.transport_mode || 'walking';
@@ -3091,12 +3301,19 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         }
       });
 
-      // Show itinerary layers
-      ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow',
-        'itinerary-transit', 'itinerary-stops-circle', 'itinerary-stops-icon',
-        'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
+      // Show itinerary route layers (but NOT the stop markers - using Font Awesome instead)
+      ['itinerary-walking-glow', 'itinerary-walking', 'itinerary-transit-glow', 'itinerary-transit-border',
+        'itinerary-transit', 'itinerary-transit-center'].forEach(layer => {
           if (mapInstance.getLayer(layer)) {
             mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
+          }
+        });
+      
+      // KEEP stop markers HIDDEN - we use Font Awesome markers instead
+      ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon',
+        'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
+          if (mapInstance.getLayer(layer)) {
+            mapInstance.setLayoutProperty(layer, 'visibility', 'none');
           }
         });
 
@@ -3117,6 +3334,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         maxZoom: 14
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itineraryRouteData, selectedItineraryDay, isLoaded, onRouteCalculated]);
 
   // Handle Search Results Markers
@@ -3329,6 +3547,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       });
     }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchResults, isLoaded]);
 
   // 2D/3D mode toggle
@@ -3493,9 +3712,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
   // ===========================================
   // EXPAND MAP TOGGLE - Cinematic Fullscreen
   // ===========================================
-  // ===========================================
-  // EXPAND MAP TOGGLE - Cinematic Fullscreen
-  // ===========================================
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleExpandToggle = useCallback(() => {
     setIsExpanded(prev => {
       const newExpanded = !prev;

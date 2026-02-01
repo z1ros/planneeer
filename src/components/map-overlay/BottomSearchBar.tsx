@@ -103,29 +103,59 @@ export default function BottomSearchBar({
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSpeechTimeRef = useRef<number>(Date.now());
+  const shouldKeepListeningRef = useRef<boolean>(false);
+  const accumulatedTranscriptRef = useRef<string>('');
 
   // Use dynamic placeholder based on active layer, or custom placeholder if provided
   const displayPlaceholder = placeholder || getPlaceholder(activeLayer || null);
 
-  // Initialize speech recognition
+  // Initialize speech recognition with 3-second silence buffer
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true; // Keep listening continuously
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
+      // Clear silence timeout helper
+      const clearSilenceTimeout = () => {
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+      };
+
+      // Start silence timeout - stops listening after 3 seconds of silence
+      const startSilenceTimeout = () => {
+        clearSilenceTimeout();
+        silenceTimeoutRef.current = setTimeout(() => {
+          console.log('[Voice] 3 seconds of silence - finalizing...');
+          shouldKeepListeningRef.current = false;
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+        }, 3000); // 3 second silence buffer
+      };
+
       recognition.onstart = () => {
-        console.log('[Voice] Started listening...');
+        console.log('[Voice] Started listening (3s silence buffer active)...');
         setIsListening(true);
         setInterimTranscript('');
+        lastSpeechTimeRef.current = Date.now();
+        startSilenceTimeout(); // Start timeout when listening begins
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = '';
         let final = '';
+
+        // Reset silence timeout on any speech
+        lastSpeechTimeRef.current = Date.now();
+        startSilenceTimeout(); // Reset the 3-second timer
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
@@ -138,37 +168,71 @@ export default function BottomSearchBar({
 
         if (final) {
           console.log('[Voice] Final transcript:', final);
-
-          // Check for reservation intent first
-          const { isReservation, details } = detectReservationIntent(final);
-
-          if (isReservation && onReservationRequest) {
-            console.log('[Voice] Triggering reservation modal with:', details);
-            setSearchQuery('');
-            setInterimTranscript('');
-            onReservationRequest(details);
-          } else {
-            // Regular search
-            setSearchQuery(final);
-            setInterimTranscript('');
-            setTimeout(() => {
-              onSearch?.(final.trim());
-            }, 300);
-          }
+          setSearchQuery(final);
+          setInterimTranscript('');
+          // Auto-search after voice input
+          setTimeout(() => {
+            onSearch?.(final.trim());
+          }, 300);
         } else {
           setInterimTranscript(interim);
         }
       };
 
       recognition.onerror = (event) => {
-        console.error('[Voice] Error:', event.error);
-        setIsListening(false);
-        setInterimTranscript('');
+        // Ignore 'no-speech' and 'aborted' errors - they're expected
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+          console.log('[Voice] Expected event:', event.error);
+          // On no-speech, restart if we should keep listening
+          if (event.error === 'no-speech' && shouldKeepListeningRef.current) {
+            console.log('[Voice] Restarting after no-speech...');
+            setTimeout(() => {
+              try {
+                recognition.start();
+              } catch (e) {
+                console.log('[Voice] Could not restart:', e);
+              }
+            }, 100);
+          }
+        } else {
+          console.error('[Voice] Error:', event.error);
+          shouldKeepListeningRef.current = false;
+          clearSilenceTimeout();
+          setIsListening(false);
+        }
       };
 
       recognition.onend = () => {
-        console.log('[Voice] Stopped listening');
+        console.log('[Voice] Recognition ended, shouldKeepListening:', shouldKeepListeningRef.current);
+        
+        // Check if we should restart (browser stopped but user hasn't clicked stop)
+        if (shouldKeepListeningRef.current) {
+          console.log('[Voice] Auto-restarting recognition...');
+          setTimeout(() => {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.log('[Voice] Could not restart:', e);
+              shouldKeepListeningRef.current = false;
+              clearSilenceTimeout();
+              setIsListening(false);
+            }
+          }, 100);
+          return;
+        }
+        
+        // Actually stopping - finalize everything
+        clearSilenceTimeout();
         setIsListening(false);
+        
+        // Auto-search with collected query
+        const finalQuery = accumulatedTranscriptRef.current.trim();
+        if (finalQuery) {
+          console.log('[Voice] Final query:', finalQuery);
+          setTimeout(() => {
+            onSearch?.(finalQuery);
+          }, 300);
+        }
       };
 
       recognitionRef.current = recognition;
@@ -177,6 +241,10 @@ export default function BottomSearchBar({
     }
 
     return () => {
+      shouldKeepListeningRef.current = false;
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
@@ -191,12 +259,26 @@ export default function BottomSearchBar({
     }
 
     if (isListening) {
+      // Stop listening immediately when button clicked
+      console.log('[Voice] User clicked stop');
+      shouldKeepListeningRef.current = false;
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
       recognitionRef.current.stop();
     } else {
       try {
+        // Clear previous query when starting new voice input
+        console.log('[Voice] User clicked start');
+        setSearchQuery('');
+        setInterimTranscript('');
+        accumulatedTranscriptRef.current = '';
+        shouldKeepListeningRef.current = true; // Keep listening until 3s silence or user stops
         recognitionRef.current.start();
       } catch (err) {
         console.error('[Voice] Failed to start:', err);
+        shouldKeepListeningRef.current = false;
       }
     }
   }, [isListening, onVoiceClick]);
