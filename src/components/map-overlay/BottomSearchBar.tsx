@@ -6,16 +6,18 @@ interface BottomSearchBarProps {
   placeholder?: string;
 }
 
-export default function BottomSearchBar({ 
-  onSearch, 
+export default function BottomSearchBar({
+  onSearch,
   onVoiceClick,
   placeholder = "What's possible with $45 today?"
 }: BottomSearchBarProps) {
-  const [searchQuery, setSearchQuery] = useState(placeholder);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch?.(searchQuery);
+    if (searchQuery.trim()) {
+      onSearch?.(searchQuery.trim());
+    }
   };
 
   return (

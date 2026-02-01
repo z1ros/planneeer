@@ -1,9 +1,9 @@
 import {
-    BottomSearchBar,
-    LeftSidebar,
-    RightItineraryPanel,
-    type BudgetData,
-    type ItineraryItem
+  BottomSearchBar,
+  LeftSidebar,
+  RightItineraryPanel,
+  type BudgetData,
+  type ItineraryItem
 } from './map-overlay';
 
 interface MapOverlayUIProps {
