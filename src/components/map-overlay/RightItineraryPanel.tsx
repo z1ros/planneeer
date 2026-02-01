@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ItineraryTimeline from './ItineraryTimeline';
 import BudgetBreakdown from './BudgetBreakdown';
+import ReservationModal from './ReservationModal';
 import { DetailedItinerary, DetailedStop } from '../../services/plannerApi';
 import { speakItinerary, stopSpeaking, getIsSpeaking } from '../../services/speechService';
 
@@ -73,9 +74,9 @@ function SubwayPill({ line }: { line: string }) {
   const color = SUBWAY_COLORS[line] || '#666';
   const isYellow = ['N', 'Q', 'R', 'W'].includes(line);
   return (
-    <span 
+    <span
       className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shadow-sm"
-      style={{ 
+      style={{
         backgroundColor: color,
         color: isYellow ? '#000' : '#fff'
       }}
@@ -108,7 +109,7 @@ function ListenButton({ itinerary }: { itinerary: DetailedItinerary }) {
           transitToNext: stop.transitToNext
         }))
       });
-      
+
       // Check when speech ends
       const checkSpeaking = setInterval(() => {
         if (!getIsSpeaking()) {
@@ -120,13 +121,12 @@ function ListenButton({ itinerary }: { itinerary: DetailedItinerary }) {
   };
 
   return (
-    <button 
+    <button
       onClick={handleClick}
-      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-        isSpeaking 
-          ? 'bg-green-500 text-white animate-pulse' 
-          : 'bg-white/5 hover:bg-green-500/20 text-white/40 hover:text-green-400'
-      }`}
+      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isSpeaking
+        ? 'bg-green-500 text-white animate-pulse'
+        : 'bg-white/5 hover:bg-green-500/20 text-white/40 hover:text-green-400'
+        }`}
       title={isSpeaking ? "Stop reading" : "Read itinerary aloud"}
     >
       <i className={`fa-solid ${isSpeaking ? 'fa-stop' : 'fa-volume-high'} text-xs`}></i>
@@ -143,28 +143,29 @@ const TYPE_CONFIG = {
 };
 
 // Detailed stop card component - redesigned
-function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: { 
-  stop: DetailedStop; 
+function DetailedStopCard({ stop, stopNumber, isLast, isExpanded, onReserve }: {
+  stop: DetailedStop;
   stopNumber: number;
-  isLast: boolean; 
+  isLast: boolean;
   isExpanded: boolean;
+  onReserve?: (stop: DetailedStop) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const config = TYPE_CONFIG[stop.type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.activity;
-  
+
   return (
     <div className="relative">
       {/* Connection line to previous stop */}
       {stopNumber > 1 && (
         <div className="absolute -top-2 left-[18px] w-0.5 h-2 bg-white/10"></div>
       )}
-      
+
       {/* Stop Card */}
-      <div 
+      <div
         className={`relative bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden hover:border-orange-500/50 hover:bg-white/10 transition-all duration-300 cursor-pointer ${showDetails ? 'ring-1 ring-orange-500/30' : ''}`}
         onClick={() => setShowDetails(!showDetails)}
       >
-        
+
         {/* Main content */}
         <div className="p-3">
           {/* Header row */}
@@ -173,7 +174,7 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
             <div className={`w-9 h-9 rounded-lg ${config.bg} flex items-center justify-center shrink-0`}>
               <span className="text-white font-bold text-sm">{stopNumber}</span>
             </div>
-            
+
             {/* Name and time */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
@@ -185,21 +186,21 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
                 {stop.name}
               </h4>
             </div>
-            
+
             {/* Cost and duration */}
             <div className="text-right shrink-0">
               <div className="text-emerald-400 font-bold text-sm">{stop.cost || 'Free'}</div>
               <div className="text-white/30 text-[10px]">{stop.duration}</div>
             </div>
           </div>
-          
+
           {/* Why Visit - always visible */}
           {stop.whyVisit && (
             <p className={`mt-2 text-white/50 ${isExpanded ? 'text-xs' : 'text-[11px]'} leading-relaxed line-clamp-2`}>
               {stop.whyVisit}
             </p>
           )}
-          
+
           {/* Expandable details */}
           {showDetails && (
             <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -212,7 +213,7 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
                   <p className="text-white/60 text-[11px] leading-relaxed">{stop.whatToDo}</p>
                 </div>
               )}
-              
+
               {/* Pro Tip */}
               {stop.proTip && (
                 <div className="flex gap-2 bg-amber-500/10 rounded-lg p-2 -mx-1">
@@ -222,9 +223,23 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
                   <p className="text-amber-200/80 text-[11px] leading-relaxed italic">{stop.proTip}</p>
                 </div>
               )}
+
+              {/* Reserve Button - show for food/restaurants */}
+              {(stop.type === 'food' || stop.name.toLowerCase().includes('restaurant') || stop.name.toLowerCase().includes('pizza') || stop.name.toLowerCase().includes('cafe') || stop.name.toLowerCase().includes('bar') || stop.name.toLowerCase().includes('grill')) && onReserve && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReserve(stop);
+                  }}
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white text-xs font-semibold rounded-lg transition-all shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30"
+                >
+                  <i className="fa-solid fa-robot"></i>
+                  Reserve with AI Agent
+                </button>
+              )}
             </div>
           )}
-          
+
           {/* Click hint */}
           <div className="mt-2 flex items-center justify-center">
             <span className="text-[9px] text-white/20">
@@ -232,7 +247,7 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
             </span>
           </div>
         </div>
-        
+
         {/* Nearest Station - compact footer */}
         {stop.nearestStation && (
           <div className="px-3 py-2 bg-black/20 border-t border-white/[0.05] flex items-center gap-2">
@@ -246,13 +261,13 @@ function DetailedStopCard({ stop, stopNumber, isLast, isExpanded }: {
           </div>
         )}
       </div>
-      
+
       {/* Transit to Next - redesigned */}
       {!isLast && stop.transitToNext && (
         <div className="relative my-1.5 ml-[18px]">
           {/* Vertical line */}
           <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-white/10"></div>
-          
+
           {/* Transit card */}
           <div className="ml-4 bg-white/5 rounded-lg p-2.5 border border-white/10">
             <div className="flex items-center gap-2 mb-1.5">
@@ -293,9 +308,19 @@ export default function RightItineraryPanel({
   onClearDetailedItinerary
 }: RightItineraryPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+  const [reservationModalOpen, setReservationModalOpen] = useState(false);
+  const [reservationMessage, setReservationMessage] = useState('');
+
   const totalSpent = budget.food + budget.activity + budget.transit;
   const remaining = totalBudget !== null ? Math.max(0, totalBudget - totalSpent) : 0;
+
+  // Handle reservation request from stop card
+  const handleReserveStop = (stop: DetailedStop) => {
+    console.log('[Panel] Reserve clicked for:', stop.name);
+    const message = `Book a reservation at ${stop.name}${stop.arrivalTime ? ` at ${stop.arrivalTime}` : ''}`;
+    setReservationMessage(message);
+    setReservationModalOpen(true);
+  };
 
   const handlePlanClick = (plan: 'A' | 'B') => {
     if (onPlanChange) {
@@ -306,127 +331,140 @@ export default function RightItineraryPanel({
   // Detailed Itinerary View - Premium Design
   if (detailedItinerary) {
     return (
-      <div 
-        className={`absolute right-4 top-4 ${isExpanded ? 'w-[520px]' : 'w-[340px]'} max-h-[calc(100vh-100px)] overflow-hidden rounded-2xl pointer-events-auto flex flex-col transition-all duration-300 ease-out bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)]`}
-      >
-        {/* Header */}
-        <div className="p-4 shrink-0 border-b border-white/10">
-          {/* Top controls */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
-                <i className="fa-solid fa-route text-white text-sm"></i>
-              </div>
-              <span className="text-white/60 text-xs font-medium uppercase tracking-wider">Your Itinerary</span>
-            </div>
-            <div className="flex gap-1">
-              {/* Listen button */}
-              <ListenButton itinerary={detailedItinerary} />
-              {onClearDetailedItinerary && (
-                <button 
-                  onClick={onClearDetailedItinerary}
-                  className="w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 flex items-center justify-center transition-all"
-                  title="Clear itinerary"
-                >
-                  <i className="fa-solid fa-times text-xs"></i>
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* Title */}
-          <h2 className={`text-white font-bold ${isExpanded ? 'text-xl' : 'text-lg'} leading-tight mb-1`}>
-            {detailedItinerary.title}
-          </h2>
-          <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{detailedItinerary.overview}</p>
-          
-          {/* Stats row */}
-          <div className="flex gap-2 mt-3">
-            <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
-              <div className="flex items-center gap-1.5">
-                <i className="fa-solid fa-clock text-orange-500 text-[10px]"></i>
-                <span className="text-white text-xs font-semibold">{detailedItinerary.totalDuration}</span>
-              </div>
-              <span className="text-white/40 text-[9px]">Duration</span>
-            </div>
-            <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
-              <div className="flex items-center gap-1.5">
-                <i className="fa-solid fa-dollar-sign text-orange-500 text-[10px]"></i>
-                <span className="text-white text-xs font-semibold">{detailedItinerary.totalCost}</span>
-              </div>
-              <span className="text-white/40 text-[9px]">Est. Cost</span>
-            </div>
-            <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
-              <div className="flex items-center gap-1.5">
-                <i className="fa-solid fa-map-pin text-orange-500 text-[10px]"></i>
-                <span className="text-white text-xs font-semibold">{detailedItinerary.stops.length}</span>
-              </div>
-              <span className="text-white/40 text-[9px]">Stops</span>
-            </div>
-          </div>
-        </div>
-        
-        {/* Stops List + Pro Tips (scrollable) */}
-        <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar">
-          <div className="space-y-1.5 mb-3">
-            {detailedItinerary.stops.map((stop, index) => (
-              <DetailedStopCard 
-                key={stop.id || index} 
-                stop={stop} 
-                stopNumber={index + 1}
-                isLast={index === detailedItinerary.stops.length - 1}
-                isExpanded={isExpanded}
-              />
-            ))}
-          </div>
-          
-          {/* Pro Tips */}
-          {detailedItinerary.tips && detailedItinerary.tips.length > 0 && (
-            <div className="py-2.5 border-t border-white/10 bg-white/5 rounded-lg">
-              <div className="px-3">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <i className="fa-solid fa-lightbulb text-orange-500 text-[10px]"></i>
-                  <span className="text-white/60 text-[10px] font-semibold uppercase tracking-wider">Pro Tips</span>
+      <>
+        <div
+          className={`absolute right-4 top-4 ${isExpanded ? 'w-[520px]' : 'w-[340px]'} max-h-[calc(100vh-100px)] overflow-hidden rounded-2xl pointer-events-auto flex flex-col transition-all duration-300 ease-out bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)]`}
+        >
+          {/* Header */}
+          <div className="p-4 shrink-0 border-b border-white/10">
+            {/* Top controls */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
+                  <i className="fa-solid fa-route text-white text-sm"></i>
                 </div>
-                <div className="space-y-1">
-                  {detailedItinerary.tips.slice(0, 3).map((tip, i) => (
-                    <p key={i} className="text-white/50 text-[10px] flex items-start gap-1.5">
-                      <span className="text-orange-500">•</span>
-                      <span className="leading-relaxed">{tip}</span>
-                    </p>
-                  ))}
-                </div>
+                <span className="text-white/60 text-xs font-medium uppercase tracking-wider">Your Itinerary</span>
+              </div>
+              <div className="flex gap-1">
+                {/* Listen button */}
+                <ListenButton itinerary={detailedItinerary} />
+                {onClearDetailedItinerary && (
+                  <button
+                    onClick={onClearDetailedItinerary}
+                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 flex items-center justify-center transition-all"
+                    title="Clear itinerary"
+                  >
+                    <i className="fa-solid fa-times text-xs"></i>
+                  </button>
+                )}
               </div>
             </div>
-          )}
-        </div>
-        
-        {/* Budget Footer - Pinned at bottom */}
-        <div className="px-3 py-3 border-t border-white/10 shrink-0 bg-black/50">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1 text-center">
-              <div className="text-orange-500 font-bold text-base">${Math.round(budget.food)}</div>
-              <div className="text-white/40 text-[9px] uppercase tracking-wider">Food</div>
+
+            {/* Title */}
+            <h2 className={`text-white font-bold ${isExpanded ? 'text-xl' : 'text-lg'} leading-tight mb-1`}>
+              {detailedItinerary.title}
+            </h2>
+            <p className="text-white/40 text-xs leading-relaxed line-clamp-2">{detailedItinerary.overview}</p>
+
+            {/* Stats row */}
+            <div className="flex gap-2 mt-3">
+              <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                <div className="flex items-center gap-1.5">
+                  <i className="fa-solid fa-clock text-orange-500 text-[10px]"></i>
+                  <span className="text-white text-xs font-semibold">{detailedItinerary.totalDuration}</span>
+                </div>
+                <span className="text-white/40 text-[9px]">Duration</span>
+              </div>
+              <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                <div className="flex items-center gap-1.5">
+                  <i className="fa-solid fa-dollar-sign text-orange-500 text-[10px]"></i>
+                  <span className="text-white text-xs font-semibold">{detailedItinerary.totalCost}</span>
+                </div>
+                <span className="text-white/40 text-[9px]">Est. Cost</span>
+              </div>
+              <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
+                <div className="flex items-center gap-1.5">
+                  <i className="fa-solid fa-map-pin text-orange-500 text-[10px]"></i>
+                  <span className="text-white text-xs font-semibold">{detailedItinerary.stops.length}</span>
+                </div>
+                <span className="text-white/40 text-[9px]">Stops</span>
+              </div>
             </div>
-            <div className="w-px h-8 bg-white/10"></div>
-            <div className="flex-1 text-center">
-              <div className="text-orange-500 font-bold text-base">${Math.round(budget.activity)}</div>
-              <div className="text-white/40 text-[9px] uppercase tracking-wider">Activities</div>
+          </div>
+
+          {/* Stops List + Pro Tips (scrollable) */}
+          <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar">
+            <div className="space-y-1.5 mb-3">
+              {detailedItinerary.stops.map((stop, index) => (
+                <DetailedStopCard
+                  key={stop.id || index}
+                  stop={stop}
+                  stopNumber={index + 1}
+                  isLast={index === detailedItinerary.stops.length - 1}
+                  isExpanded={isExpanded}
+                  onReserve={handleReserveStop}
+                />
+              ))}
             </div>
-            <div className="w-px h-8 bg-white/10"></div>
-            <div className="flex-1 text-center">
-              <div className="text-orange-500 font-bold text-base">${Math.round(budget.transit)}</div>
-              <div className="text-white/40 text-[9px] uppercase tracking-wider">Transit</div>
+
+            {/* Pro Tips */}
+            {detailedItinerary.tips && detailedItinerary.tips.length > 0 && (
+              <div className="py-2.5 border-t border-white/10 bg-white/5 rounded-lg">
+                <div className="px-3">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <i className="fa-solid fa-lightbulb text-orange-500 text-[10px]"></i>
+                    <span className="text-white/60 text-[10px] font-semibold uppercase tracking-wider">Pro Tips</span>
+                  </div>
+                  <div className="space-y-1">
+                    {detailedItinerary.tips.slice(0, 3).map((tip, i) => (
+                      <p key={i} className="text-white/50 text-[10px] flex items-start gap-1.5">
+                        <span className="text-orange-500">•</span>
+                        <span className="leading-relaxed">{tip}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Budget Footer - Pinned at bottom */}
+          <div className="px-3 py-3 border-t border-white/10 shrink-0 bg-black/50">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 text-center">
+                <div className="text-orange-500 font-bold text-base">${Math.round(budget.food)}</div>
+                <div className="text-white/40 text-[9px] uppercase tracking-wider">Food</div>
+              </div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div className="flex-1 text-center">
+                <div className="text-orange-500 font-bold text-base">${Math.round(budget.activity)}</div>
+                <div className="text-white/40 text-[9px] uppercase tracking-wider">Activities</div>
+              </div>
+              <div className="w-px h-8 bg-white/10"></div>
+              <div className="flex-1 text-center">
+                <div className="text-orange-500 font-bold text-base">${Math.round(budget.transit)}</div>
+                <div className="text-white/40 text-[9px] uppercase tracking-wider">Transit</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+
+        {/* Reservation Modal */}
+        <ReservationModal
+          isOpen={reservationModalOpen}
+          onClose={() => {
+            setReservationModalOpen(false);
+            setReservationMessage('');
+          }}
+          initialMessage={reservationMessage}
+        />
+      </>
     );
   }
 
   // Default Panel (Saved Items / Empty State)
   return (
-    <div 
+    <div
       className="absolute right-4 top-4 w-[300px] max-h-[calc(100vh-170px)] overflow-hidden rounded-2xl pointer-events-auto flex flex-col"
       style={{
         background: 'linear-gradient(165deg, rgba(15,23,42,0.95) 0%, rgba(10,15,30,0.97) 100%)',
@@ -438,21 +476,19 @@ export default function RightItineraryPanel({
       <div className="p-3 shrink-0">
         <div className="flex items-center gap-1.5 bg-black/30 rounded-xl p-1">
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${
-              activePlan === 'A'
-                ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20'
-                : 'text-white/50 hover:text-white/80'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${activePlan === 'A'
+              ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20'
+              : 'text-white/50 hover:text-white/80'
+              }`}
             onClick={() => handlePlanClick('A')}
           >
             Plan A
           </button>
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${
-              activePlan === 'B'
-                ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20'
-                : 'text-white/50 hover:text-white/80'
-            }`}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold transition-all duration-200 ${activePlan === 'B'
+              ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20'
+              : 'text-white/50 hover:text-white/80'
+              }`}
             onClick={() => handlePlanClick('B')}
           >
             Plan B
@@ -493,7 +529,7 @@ export default function RightItineraryPanel({
               <span className="text-white/60 text-xs font-medium">Your selections ({savedItems.length})</span>
             </div>
             {onClearSavedItems && (
-              <button 
+              <button
                 onClick={onClearSavedItems}
                 className="text-white/30 text-[10px] hover:text-red-400 transition-colors"
               >
@@ -501,11 +537,11 @@ export default function RightItineraryPanel({
               </button>
             )}
           </div>
-          
+
           {/* Saved Items List */}
           <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
             {savedItems.map((item, index) => (
-              <div 
+              <div
                 key={item.id}
                 className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.06] hover:border-white/15 hover:bg-white/[0.05] transition-all group"
               >
@@ -520,7 +556,7 @@ export default function RightItineraryPanel({
                     )}
                   </div>
                   {onRemoveSavedItem && (
-                    <button 
+                    <button
                       onClick={() => onRemoveSavedItem(item.id)}
                       className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-all p-1"
                     >
@@ -531,19 +567,18 @@ export default function RightItineraryPanel({
               </div>
             ))}
           </div>
-          
+
           {/* Build Itinerary Button */}
           {onBuildItinerary && (
             <button
               onClick={onBuildItinerary}
               disabled={isLoading || savedItems.length < 2}
-              className={`mt-3 w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                isLoading 
-                  ? 'bg-orange-500/30 text-white/50 cursor-wait'
-                  : savedItems.length < 2
-                    ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-orange-500 to-red-500 text-white hover:shadow-lg hover:shadow-orange-500/30 hover:scale-[1.02] active:scale-[0.98]'
-              }`}
+              className={`mt-3 w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${isLoading
+                ? 'bg-orange-500/30 text-white/50 cursor-wait'
+                : savedItems.length < 2
+                  ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-500 to-red-500 text-white hover:shadow-lg hover:shadow-orange-500/30 hover:scale-[1.02] active:scale-[0.98]'
+                }`}
             >
               {isLoading ? (
                 <>

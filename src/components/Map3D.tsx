@@ -425,16 +425,16 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
       // Brooklyn Bridge location for the 3D guide - center of the bridge pedestrian walkway
       const BROOKLYN_BRIDGE: [number, number] = [-73.9957, 40.7053];
-      
+
       // Set initial view to Brooklyn Bridge to see the 3D guide
       // WTC is northwest of Brooklyn Bridge, so bearing ~-30 to -60 shows WTC in background
       setTimeout(() => {
         mapInstance.flyTo({
           center: BROOKLYN_BRIDGE,
-          zoom: 16,
-          pitch: 60,
+          zoom: 18,  // Closer zoom to see the woman model clearly
+          pitch: 65,  // Slightly higher pitch for better 3D view
           bearing: -45, // Looking northwest toward WTC/Manhattan skyline
-          duration: 2000
+          duration: 2500  // Slightly longer for smoother cinematic effect
         });
         console.log('[Map] Initial view set to Brooklyn Bridge with 3D Guide (WTC in background)');
       }, 500);
@@ -652,25 +652,25 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
       // 3D GUIDE MODEL AT BROOKLYN BRIDGE (Three.js Custom Layer)
       // ===========================================
-      
+
       // Brooklyn Bridge coordinates - center of the bridge pedestrian walkway
       const BROOKLYN_BRIDGE_LNG = -73.9957;
       const BROOKLYN_BRIDGE_LAT = 40.7053;
-      
+
       // Model transformation for Mapbox
       const modelOrigin: [number, number] = [BROOKLYN_BRIDGE_LNG, BROOKLYN_BRIDGE_LAT];
       const modelAltitude = 0;
       const modelRotate = [Math.PI / 2, 0, 0]; // Rotate to stand upright
-      
+
       const modelAsMercatorCoordinate = mapboxgl.MercatorCoordinate.fromLngLat(
         modelOrigin,
         modelAltitude
       );
-      
+
       // Scale factor to make model visible at this location (meters)
       // A human is ~1.7m tall, scale factor converts to mercator units
       const modelScale = modelAsMercatorCoordinate.meterInMercatorCoordinateUnits() * 100;
-      
+
       const modelTransform = {
         translateX: modelAsMercatorCoordinate.x,
         translateY: modelAsMercatorCoordinate.y,
@@ -680,7 +680,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         rotateZ: modelRotate[2],
         scale: modelScale
       };
-      
+
       // Three.js variables for the custom layer
       let guideCamera: THREE.Camera;
       let guideScene: THREE.Scene;
@@ -688,59 +688,59 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       let guideMixer: THREE.AnimationMixer | null = null;
       let guideModel: THREE.Group | null = null;
       const guideClock = new THREE.Clock();
-      
+
       // Custom layer for Three.js 3D model
       const guideLayer: mapboxgl.CustomLayerInterface = {
         id: 'guide-3d-layer',
         type: 'custom',
         renderingMode: '3d',
-        
-        onAdd: function(_map, gl) {
+
+        onAdd: function (_map, gl) {
           // Create Three.js scene
           guideScene = new THREE.Scene();
           guideCamera = new THREE.Camera();
-          
+
           // Lighting
           const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
           guideScene.add(ambientLight);
-          
+
           const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
           directionalLight.position.set(0, 70, 100).normalize();
           guideScene.add(directionalLight);
-          
+
           const directionalLight2 = new THREE.DirectionalLight(0xf97316, 1);
           directionalLight2.position.set(0, -70, 100).normalize();
           guideScene.add(directionalLight2);
-          
+
           // Load 3D model
           const loader = new GLTFLoader();
           loader.load(
             '/woman_walking.glb',
             (gltf) => {
               guideModel = gltf.scene;
-              
+
               // Log model details for debugging
               const box = new THREE.Box3().setFromObject(guideModel);
               const size = box.getSize(new THREE.Vector3());
               const center = box.getCenter(new THREE.Vector3());
               console.log('[Guide3D] Model bounding box size:', size.x, size.y, size.z);
               console.log('[Guide3D] Model center:', center.x, center.y, center.z);
-              
+
               // The model is HUGE (~1700 units tall) - scale it down to ~1.5 units (smaller human size)
               const targetHeight = 1.5; // 1.5 meters tall (smaller)
               const scaleFactor = targetHeight / size.y;
               guideModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-              
+
               // Recalculate box after scaling
               const scaledBox = new THREE.Box3().setFromObject(guideModel);
               const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
-              
+
               // Center the model at origin and ensure it's on the ground
               guideModel.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
-              
+
               console.log('[Guide3D] Model scaled by:', scaleFactor);
               console.log('[Guide3D] Final position:', guideModel.position);
-              
+
               // Apply a fallback material to all meshes if textures failed
               guideModel.traverse((child) => {
                 if ((child as THREE.Mesh).isMesh) {
@@ -756,56 +756,56 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                   }
                 }
               });
-              
+
               // Rotate model to face the camera (camera bearing is -45, looking from southeast toward northwest)
               // Flip the model on X axis to mirror it, then rotate to face camera
               guideModel.scale.x *= -1; // Mirror the model
               guideModel.rotation.y = Math.PI * 0.25; // Then rotate 45 degrees to align with camera bearing
-              
+
               guideScene.add(guideModel);
               console.log('[Guide3D] Model loaded successfully');
               console.log('[Guide3D] Animations:', gltf.animations.map(a => a.name));
-              
+
               // Store original position and rotation for animation
               const originalY = guideModel.position.y;
               const originalRotationZ = guideModel.rotation.z;
               const originalRotationY = guideModel.rotation.y;
-              
+
               // Create procedural greeting animation (whole body)
               let animTime = 0;
               let isGreeting = false;
               let greetStartTime = 0;
               const greetDuration = 3.5; // Greeting animation duration
-              
+
               // Animation update function
               const updateWaveAnimation = (delta: number) => {
                 animTime += delta;
-                
+
                 if (!guideModel) return;
-                
+
                 if (isGreeting) {
                   const elapsed = animTime - greetStartTime;
-                  
+
                   if (elapsed < greetDuration) {
                     // Greeting animation phases
                     const phase = elapsed / greetDuration;
-                    
+
                     // Quick lean forward then back (like a bow/nod)
                     const bowAmount = Math.sin(phase * Math.PI * 2) * 0.08;
                     guideModel.rotation.x = bowAmount;
-                    
+
                     // Side-to-side happy sway
                     const swayAmount = Math.sin(elapsed * 5) * 0.06 * (1 - phase); // Decreases over time
                     guideModel.rotation.z = originalRotationZ + swayAmount;
-                    
+
                     // Slight bounce
                     const bounceAmount = Math.abs(Math.sin(elapsed * 8)) * 0.015 * (1 - phase);
                     guideModel.position.y = originalY + bounceAmount;
-                    
+
                     // Gentle turn toward camera
                     const turnAmount = Math.sin(elapsed * 3) * 0.05;
                     guideModel.rotation.y = originalRotationY + turnAmount;
-                    
+
                   } else {
                     // Return to original pose smoothly
                     isGreeting = false;
@@ -818,12 +818,12 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                   // Subtle idle animation - gentle breathing/swaying
                   const idleSway = Math.sin(animTime * 1.2) * 0.01;
                   const idleBreathe = Math.sin(animTime * 2) * 0.003;
-                  
+
                   guideModel.rotation.z = originalRotationZ + idleSway;
                   guideModel.position.y = originalY + idleBreathe;
                 }
               };
-              
+
               // Start greeting function
               const startWave = () => {
                 if (!isGreeting) {
@@ -832,30 +832,30 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                   console.log('[Guide3D] Starting greeting animation');
                 }
               };
-              
+
               // Store update function for use in render loop
               (guideModel as THREE.Group & { updateWave?: (delta: number) => void, startWave?: () => void }).updateWave = updateWaveAnimation;
               (guideModel as THREE.Group & { startWave?: () => void }).startWave = startWave;
-              
+
               // Setup animation mixer for any embedded animations
               if (gltf.animations && gltf.animations.length > 0) {
                 guideMixer = new THREE.AnimationMixer(guideModel);
-                
+
                 // Try to find wave, idle, or walking animation
-                const anim = gltf.animations.find(a => 
+                const anim = gltf.animations.find(a =>
                   a.name.toLowerCase().includes('wave') ||
                   a.name.toLowerCase().includes('idle') ||
                   a.name.toLowerCase().includes('walk') ||
                   a.name.toLowerCase().includes('greet')
                 ) || gltf.animations[0];
-                
+
                 if (anim) {
                   const action = guideMixer.clipAction(anim);
                   action.play();
                   console.log('[Guide3D] Playing animation:', anim.name);
                 }
               }
-              
+
               // Welcome speech and wave after model loads
               setTimeout(() => {
                 startWave(); // Start waving
@@ -869,7 +869,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               console.error('[Guide3D] Error loading model:', error);
             }
           );
-          
+
           // Create renderer using existing WebGL context
           guideRenderer = new THREE.WebGLRenderer({
             canvas: _map.getCanvas(),
@@ -878,14 +878,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           });
           guideRenderer.autoClear = false;
         },
-        
-        render: function(_gl, matrix) {
+
+        render: function (_gl, matrix) {
           // Update animation
           const delta = guideClock.getDelta();
           if (guideMixer) {
             guideMixer.update(delta);
           }
-          
+
           // Update procedural wave animation
           if (guideModel) {
             const modelWithWave = guideModel as THREE.Group & { updateWave?: (delta: number) => void };
@@ -893,7 +893,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               modelWithWave.updateWave(delta);
             }
           }
-          
+
           // Create rotation matrices
           const rotationX = new THREE.Matrix4().makeRotationAxis(
             new THREE.Vector3(1, 0, 0),
@@ -907,7 +907,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             new THREE.Vector3(0, 0, 1),
             modelTransform.rotateZ
           );
-          
+
           // Build local transformation matrix (model space to mercator space)
           const l = new THREE.Matrix4()
             .makeTranslation(
@@ -925,21 +925,21 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             .multiply(rotationX)
             .multiply(rotationY)
             .multiply(rotationZ);
-          
+
           // Combine with Mapbox's projection matrix (clone to avoid mutation)
           const m = new THREE.Matrix4().fromArray(matrix);
           guideCamera.projectionMatrix = m.clone().multiply(l);
-          
+
           guideRenderer.resetState();
           guideRenderer.render(guideScene, guideCamera);
           mapInstance.triggerRepaint();
         }
       };
-      
+
       // Add the custom 3D layer
       mapInstance.addLayer(guideLayer);
       console.log('[Map] 3D Guide Three.js layer added at Brooklyn Bridge');
-      
+
       // Add glow effect under guide (circle layer still works)
       mapInstance.addSource('guide-location', {
         type: 'geojson',
@@ -955,7 +955,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           }]
         }
       });
-      
+
       mapInstance.addLayer({
         id: 'guide-glow',
         type: 'circle',
@@ -968,7 +968,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'circle-pitch-alignment': 'map'
         }
       });
-      
+
       // Click handler for glow (since custom layers don't have click events)
       mapInstance.on('click', 'guide-glow', () => {
         // Trigger wave animation when clicked
@@ -980,7 +980,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         }
         speak("Hi there! Welcome to What's Up New York! I can help you find amazing restaurants, exciting events, iconic landmarks, or plan your perfect NYC adventure. Just use the search bar or click the mic to tell me what you're looking for!");
       });
-      
+
       mapInstance.on('mouseenter', 'guide-glow', () => {
         mapInstance.getCanvas().style.cursor = 'pointer';
       });
@@ -1367,7 +1367,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
       // WALKING PATHS - Modern gradient dashed line
       // ===========================================
-      
+
       // Walking outer glow (soft orange ambient)
       mapInstance.addLayer({
         id: 'itinerary-walking-glow',
@@ -1409,7 +1409,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
       // TRANSIT PATHS - Premium subway-style lines
       // ===========================================
-      
+
       // Transit outer glow (dynamic color)
       mapInstance.addLayer({
         id: 'itinerary-transit-glow',
@@ -1833,7 +1833,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
         // Build rating
         const rating = googleRating || 0;
-        
+
         // Address line
         const address = googleAddress || (props.neighborhood ? `${props.neighborhood}, ${props.borough}` : props.borough || 'NYC');
 
@@ -1990,7 +1990,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         const priceRange = props.priceRange || '';
         const cuisine = props.cuisine || '';
         const tags = props.tags ? props.tags.split(',').map((t: string) => t.trim()).slice(0, 4) : [];
-        
+
         const popupHTML = `
           <div class="place-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif; background: linear-gradient(to bottom, rgba(30,35,45,0.98), rgba(20,25,35,0.99)); backdrop-filter: blur(20px); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1);">
             
@@ -2548,7 +2548,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
     return () => {
       if (animationId) cancelAnimationFrame(animationId);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
   // ===========================================
@@ -2863,7 +2863,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             <div style="position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); width: 16px; height: 4px; background: rgba(0,0,0,0.3); border-radius: 50%; filter: blur(2px);"></div>
           </div>
         `;
-        
+
         // Add CSS animation for pulse ring
         if (!document.querySelector('#itinerary-pin-styles')) {
           const style = document.createElement('style');
@@ -2876,11 +2876,11 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           `;
           document.head.appendChild(style);
         }
-        
+
         const marker = new mapboxgl.Marker(el)
           .setLngLat([point.lng, point.lat])
           .addTo(mapInstance);
-        
+
         // Add hover effect
         el.addEventListener('mouseenter', () => {
           el.style.transform = 'scale(1.15) translateY(-3px)';
@@ -2894,7 +2894,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         // Add click handler for popup
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          
+
           // Get type icon and color
           const typeConfig: { [key: string]: { icon: string; color: string; label: string; emoji: string } } = {
             'start': { icon: 'fa-location-dot', color: '#10b981', label: 'Starting Point', emoji: '📍' },
@@ -2904,20 +2904,20 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             'activity': { icon: 'fa-person-running', color: '#3b82f6', label: 'Activity', emoji: '🎯' },
           };
           const config = typeConfig[point.type] || { icon: 'fa-map-pin', color: '#f97316', label: 'Stop', emoji: '📌' };
-          
+
           // Calculate next stop info
           const nextStop = index < points.length - 1 ? points[index + 1] : null;
-          
+
           // Time display - format arrival and departure times
-          const timeDisplay = point.arrivalTime && point.departureTime 
+          const timeDisplay = point.arrivalTime && point.departureTime
             ? `${point.arrivalTime} → ${point.departureTime}`
             : point.arrivalTime || '';
-          
+
           // Google Maps URLs
           const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(point.name)}`;
           const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`;
           const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.lat},${point.lng}`;
-          
+
           // For start point, show minimal popup
           if (point.type === 'start') {
             const startPopupHTML = `
@@ -2942,9 +2942,9 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 </div>
               </div>
             `;
-            
-            new mapboxgl.Popup({ 
-              maxWidth: '280px', 
+
+            new mapboxgl.Popup({
+              maxWidth: '280px',
               className: 'dark-popup itinerary-popup',
               closeButton: true,
               closeOnClick: false,
@@ -2956,7 +2956,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
               .addTo(mapInstance);
             return;
           }
-          
+
           const popupHTML = `
             <div class="itinerary-stop-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
               
@@ -3090,8 +3090,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             </div>
           `;
 
-          new mapboxgl.Popup({ 
-            maxWidth: '360px', 
+          new mapboxgl.Popup({
+            maxWidth: '360px',
             className: 'dark-popup itinerary-popup',
             closeButton: true,
             closeOnClick: false,  // Allow multiple popups to stay open
@@ -3648,7 +3648,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             mapInstance.setLayoutProperty(layer, 'visibility', 'visible');
           }
         });
-      
+
       // KEEP stop markers HIDDEN - we use Font Awesome markers instead
       ['itinerary-stops-glow', 'itinerary-stops-circle', 'itinerary-stops-highlight', 'itinerary-stops-icon',
         'itinerary-stops-number-bg', 'itinerary-stops-number', 'itinerary-stops-label'].forEach(layer => {
@@ -3674,7 +3674,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         maxZoom: 14
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itineraryRouteData, selectedItineraryDay, isLoaded, onRouteCalculated]);
 
   // Handle Search Results Markers
@@ -3730,11 +3730,11 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // Add click handler for rich popup with photo fetching
       el.addEventListener('click', async (e) => {
         e.stopPropagation();
-        
+
         const itemType = props.type === 'restaurant' ? 'restaurant' : props.type === 'event' ? 'event' : 'landmark';
         const typeLabel = props.type === 'restaurant' ? 'Restaurant' : props.type === 'event' ? 'Event' : 'Landmark';
         const typeBgColor = props.type === 'restaurant' ? '#ec4899' : props.type === 'event' ? '#8b5cf6' : '#ef4444';
-        
+
         // Show loading popup first
         const loadingPopup = new mapboxgl.Popup({ maxWidth: '320px', className: 'search-popup-container' })
           .setLngLat([lng, lat])
@@ -3755,11 +3755,11 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           try {
             const searchQuery = encodeURIComponent(`${props.name} NYC`);
             const findPlaceUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${searchQuery}&inputtype=textquery&fields=place_id,photos,rating,formatted_address&key=${GOOGLE_MAPS_API_KEY}`;
-            
+
             const proxyUrl = `${API_BASE_URL}/api/proxy/places?url=${encodeURIComponent(findPlaceUrl)}`;
             const response = await fetch(proxyUrl);
             const data = await response.json();
-            
+
             if (data.candidates && data.candidates[0]) {
               const place = data.candidates[0];
               if (place.photos && place.photos[0]) {
@@ -3887,7 +3887,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       });
     }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchResults, isLoaded]);
 
   // 2D/3D mode toggle
