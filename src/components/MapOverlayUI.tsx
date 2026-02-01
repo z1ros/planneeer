@@ -1,16 +1,14 @@
-import { useState } from 'react';
-import { 
-  LeftSidebar, 
-  RightItineraryPanel, 
+import {
   BottomSearchBar,
-  type ItineraryItem,
-  type BudgetData
-} from './index';
+  LeftSidebar,
+  RightItineraryPanel,
+  type BudgetData,
+  type ItineraryItem
+} from './map-overlay';
 
 interface MapOverlayUIProps {
   onSearch?: (query: string) => void;
   onVoiceClick?: () => void;
-  onNavClick?: (nav: 'places' | 'landmarks' | 'settings') => void;
   onItemClick?: (item: ItineraryItem) => void;
   itineraryItems?: ItineraryItem[];
   budget?: BudgetData;
@@ -54,37 +52,40 @@ const defaultItems: ItineraryItem[] = [
     description: 'UberX available nearby. Estimated arrival in 3 minutes. Surge pricing not currently active.',
     tags: ['UberX', 'No Surge']
   },
+  { 
+    id: '4', 
+    type: 'attraction', 
+    name: 'Empire State Building', 
+    duration: '10 min', 
+    price: '12$', 
+    icon: 'fa-landmark', 
+    iconBg: '#ef4444',
+    address: '20 W 34th St, New York, NY 10001',
+    rating: 4.7,
+    reviewCount: 98234,
+    description: 'Iconic 102-story Art Deco skyscraper with observatories on the 86th and 102nd floors offering stunning city views.',
+    tags: ['Must See', 'Observatory', 'Iconic']
+  },
 ];
 
 const defaultBudget: BudgetData = {
   food: 7.50,
-  activity: 24.50,
+  activity: 24.5,
   transit: 24,
 };
 
 export default function MapOverlayUI({
   onSearch,
   onVoiceClick,
-  onNavClick,
   onItemClick,
   itineraryItems = defaultItems,
   budget = defaultBudget,
   totalBudget = 42.75,
 }: MapOverlayUIProps) {
-  const [activeNav, setActiveNav] = useState<'places' | 'landmarks' | 'settings'>('places');
-
-  const handleNavClick = (nav: 'places' | 'landmarks' | 'settings') => {
-    setActiveNav(nav);
-    onNavClick?.(nav);
-  };
-
   return (
-    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 100 }}>
+    <div className="absolute inset-0 pointer-events-none z-100">
       {/* Left Sidebar */}
-      <LeftSidebar 
-        activeNav={activeNav} 
-        onNavClick={handleNavClick} 
-      />
+      <LeftSidebar />
 
       {/* Right Itinerary Panel */}
       <RightItineraryPanel 

@@ -20,6 +20,7 @@ let eventsCollection;
 let landmarksCollection;
 let nycEventsCollection;
 let nycRestaurantsCollection;
+let nycLandmarksCollection;
 
 // Connect to MongoDB
 async function connectDB() {
@@ -38,15 +39,18 @@ async function connectDB() {
         nycDb = client.db('nyc');
         nycEventsCollection = nycDb.collection('events_v2');
         nycRestaurantsCollection = nycDb.collection('restaurants');
+        nycLandmarksCollection = nycDb.collection('landmarks');
 
         const placeCount = await placesCollection.countDocuments();
         const eventCount = await eventsCollection.countDocuments();
         const nycEventCount = await nycEventsCollection.countDocuments();
         const nycRestaurantCount = await nycRestaurantsCollection.countDocuments();
+        const nycLandmarkCount = await nycLandmarksCollection.countDocuments();
         console.log(`✓ Found ${placeCount} places (Boston)`);
         console.log(`✓ Found ${eventCount} events (Boston)`);
         console.log(`✓ Found ${nycEventCount} events (NYC)`);
         console.log(`✓ Found ${nycRestaurantCount} restaurants (NYC)`);
+        console.log(`✓ Found ${nycLandmarkCount} landmarks (NYC)`);
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -1968,6 +1972,341 @@ app.post('/api/search/unified', async (req, res) => {
     } catch (error) {
         console.error('Unified search error:', error);
         res.status(500).json({ error: 'Failed to search' });
+    }
+});
+
+
+// ============================================
+// SMART PLANNER API
+// ============================================
+
+/**
+ * Parse budget and preferences from natural language query
+ */
+function parseQueryIntent(query) {
+    const lowerQuery = query.toLowerCase();
+
+    // Extract budget amount - supports "$50", "50$", "50 dollars", "budget is 50", etc.
+    let budget = null;
+    const budgetPatterns = [
+        /\$(\d+(?:\.\d{2})?)/,                    // $50 or $50.00
+        /(\d+(?:\.\d{2})?)\s*\$/,                 // 50$ or 50.00$
+        /(\d+(?:\.\d{2})?)\s*dollars?/i,          // 50 dollars
+        /budget\s*(?:is|of|:)?\s*(\d+(?:\.\d{2})?)/i,  // budget is 50, budget: 50
+        /(\d+(?:\.\d{2})?)\s*(?:budget|bucks)/i   // 50 budget, 50 bucks
+    ];
+    for (const pattern of budgetPatterns) {
+        const match = lowerQuery.match(pattern);
+        if (match) {
+            budget = parseFloat(match[1]);
+            break;
+        }
+    }
+
+    // Extract time constraints
+    let timeConstraint = null;
+    if (lowerQuery.includes('today') || lowerQuery.includes('tonight')) {
+        timeConstraint = 'today';
+    } else if (lowerQuery.includes('tomorrow')) {
+        timeConstraint = 'tomorrow';
+    } else if (lowerQuery.includes('weekend')) {
+        timeConstraint = 'this weekend';
+    } else if (lowerQuery.includes('week')) {
+        timeConstraint = 'this week';
+    }
+
+    // Extract preferences
+    const preferences = {
+        wantsFood: /food|eat|dinner|lunch|breakfast|restaurant|pizza|coffee|cafe/i.test(query),
+        wantsEvents: /event|show|concert|movie|theater|museum/i.test(query),
+        wantsLandmarks: /landmark|attraction|visit|see|sightseeing|tour/i.test(query),
+        wantsCheap: /cheap|budget|affordable|free|inexpensive/i.test(query),
+        wantsQuick: /quick|fast|short|brief/i.test(query)
+    };
+
+    return { budget, timeConstraint, preferences };
+}
+
+/**
+ * Calculate estimated cost for an item
+ */
+function estimateCost(item, type) {
+    if (type === 'place' || type === 'restaurant') {
+        // Use price level or metrics
+        if (item.metrics?.avg_cost) return item.metrics.avg_cost;
+        if (item.price_level) return item.price_level * 8; // Approximate $8 per price level
+        if (item.vibe_metadata?.price_range) {
+            const match = item.vibe_metadata.price_range.match(/\$(\d+)/);
+            if (match) return parseFloat(match[1]);
+        }
+        return 15; // Default restaurant cost
+    }
+    if (type === 'event') {
+        if (item.price) {
+            const match = String(item.price).match(/(\d+(?:\.\d{2})?)/);
+            if (match) return parseFloat(match[1]);
+        }
+        return 0; // Many events are free
+    }
+    if (type === 'landmark') {
+        return 0; // Most landmarks are free to visit
+    }
+    return 0;
+}
+
+/**
+ * Build itinerary item from search result
+ */
+function buildItineraryItem(item, type, index) {
+    const typeConfig = {
+        place: { icon: 'fa-utensils', iconBg: '#ec4899', category: 'food' },
+        restaurant: { icon: 'fa-utensils', iconBg: '#ec4899', category: 'food' },
+        event: { icon: 'fa-calendar', iconBg: '#8b5cf6', category: 'activity' },
+        landmark: { icon: 'fa-landmark', iconBg: '#ef4444', category: 'activity' },
+        transit: { icon: 'fa-train-subway', iconBg: '#3b82f6', category: 'transit' }
+    };
+
+    const config = typeConfig[type] || typeConfig.place;
+    const cost = estimateCost(item, type);
+
+    return {
+        id: item._id?.toString() || `item-${index}`,
+        type: type === 'place' || type === 'restaurant' ? 'food' : type === 'event' ? 'attraction' : type,
+        name: item.name || item.businessname || item.title || 'Unknown',
+        duration: type === 'event' ? '60 min' : '30 min',
+        price: cost > 0 ? `${cost.toFixed(2)}$` : 'Free',
+        priceRange: item.vibe_metadata?.price_range || (cost > 0 ? `Avg: $${cost.toFixed(0)}` : 'Free'),
+        icon: config.icon,
+        iconBg: config.iconBg,
+        address: item.address || item.venue?.address || '',
+        rating: item.rating || null,
+        reviewCount: item.user_rating_count || null,
+        description: item.vibe_metadata?.description || item.description || '',
+        tags: item.vibe_metadata?.tags || item.categories || [],
+        cost: cost,
+        category: config.category,
+        coordinates: {
+            lat: item.latitude || item.location?.coordinates?.[1] || item.venue?.lat || 0,
+            lng: item.longitude || item.location?.coordinates?.[0] || item.venue?.lng || 0
+        }
+    };
+}
+
+/**
+ * Use smart logic to build an optimized itinerary based on user preferences
+ */
+async function buildSmartItinerary(places, events, landmarks, budget, preferences) {
+    // Determine what the user primarily wants based on preferences
+    const wantsMainlyFood = preferences.wantsFood && !preferences.wantsEvents && !preferences.wantsLandmarks;
+    const wantsMainlyEvents = preferences.wantsEvents && !preferences.wantsFood && !preferences.wantsLandmarks;
+    const wantsMainlyLandmarks = preferences.wantsLandmarks && !preferences.wantsFood && !preferences.wantsEvents;
+    
+    // Score and tag all items
+    const scoredPlaces = places.map(p => ({ ...p, itemType: 'place', score: p.score || 0.5 }));
+    const scoredEvents = events.map(e => ({ ...e, itemType: 'event', score: e.score || 0.5 }));
+    const scoredLandmarks = landmarks.map(l => ({ ...l, itemType: 'landmark', score: l.score || 0.5 }));
+    
+    // Sort each category by relevance score
+    scoredPlaces.sort((a, b) => (b.score || 0) - (a.score || 0));
+    scoredEvents.sort((a, b) => (b.score || 0) - (a.score || 0));
+    scoredLandmarks.sort((a, b) => (b.score || 0) - (a.score || 0));
+    
+    console.log(`[Smart Planner] Building itinerary - wantsFood: ${preferences.wantsFood}, wantsEvents: ${preferences.wantsEvents}, wantsLandmarks: ${preferences.wantsLandmarks}`);
+    console.log(`[Smart Planner] Available: ${scoredPlaces.length} places, ${scoredEvents.length} events, ${scoredLandmarks.length} landmarks`);
+
+    // Build Plan A: Focus on what user asked for
+    const planAItems = [];
+    let planABudget = { food: 0, activity: 0, transit: 2.25 };
+    let planATotal = 2.25;
+
+    // Determine how many of each type - SIMPLIFIED: just 1 main item for focused requests
+    let foodCount = 0, eventCount = 0, landmarkCount = 0;
+    
+    if (wantsMainlyFood) {
+        // User wants food - give them just 1 best restaurant
+        foodCount = 1;
+    } else if (wantsMainlyEvents) {
+        // User wants events - give them 1 event
+        eventCount = 1;
+    } else if (wantsMainlyLandmarks) {
+        // User wants landmarks - give them 1 landmark
+        landmarkCount = 1;
+    } else {
+        // Mixed request - give 1 of each requested type
+        if (preferences.wantsFood) foodCount = 1;
+        if (preferences.wantsEvents) eventCount = 1;
+        if (preferences.wantsLandmarks) landmarkCount = 1;
+        
+        // If nothing specific, give 1 food + 1 landmark
+        if (foodCount + eventCount + landmarkCount === 0) {
+            foodCount = 1;
+            landmarkCount = 1;
+        }
+    }
+
+    // Helper to add items
+    const addItemsToPlan = (items, count, planItems, planBudgetRef, planTotalRef) => {
+        let added = 0;
+        for (const item of items) {
+            if (added >= count) break;
+            
+            const itineraryItem = buildItineraryItem(item, item.itemType, planItems.length);
+            const newTotal = planTotalRef.value + itineraryItem.cost;
+            
+            // Check budget if specified
+            if (budget && newTotal > budget) continue;
+            
+            planItems.push(itineraryItem);
+            planTotalRef.value = newTotal;
+            added++;
+            
+            if (itineraryItem.category === 'food') {
+                planBudgetRef.food += itineraryItem.cost;
+            } else if (itineraryItem.category === 'activity') {
+                planBudgetRef.activity += itineraryItem.cost;
+            }
+        }
+        return added;
+    };
+    
+    let planATotalRef = { value: planATotal };
+    addItemsToPlan(scoredPlaces, foodCount, planAItems, planABudget, planATotalRef);
+    addItemsToPlan(scoredEvents, eventCount, planAItems, planABudget, planATotalRef);
+    addItemsToPlan(scoredLandmarks, landmarkCount, planAItems, planABudget, planATotalRef);
+    planATotal = planATotalRef.value;
+
+    // Build Plan B: Alternative options (different items from same categories)
+    const planBItems = [];
+    let planBBudget = { food: 0, activity: 0, transit: 4.50 };
+    let planBTotal = 4.50;
+
+    planBItems.push({
+        id: 'transit-2',
+        type: 'transit',
+        name: 'Subway Round Trip',
+        duration: 'calculating...', // Will be updated by frontend
+        price: '4.50$',
+        icon: 'fa-train-subway',
+        iconBg: '#3b82f6',
+        description: 'Round trip subway fare for the day.',
+        tags: ['MTA', 'Public Transit'],
+        cost: 4.50,
+        category: 'transit',
+        isPlaceholder: true
+    });
+
+    // For Plan B, skip items used in Plan A and pick alternatives
+    const planAIds = new Set(planAItems.map(i => i.id));
+    const altPlaces = scoredPlaces.filter(p => !planAIds.has(p._id?.toString()));
+    const altEvents = scoredEvents.filter(e => !planAIds.has(e._id?.toString()));
+    const altLandmarks = scoredLandmarks.filter(l => !planAIds.has(l._id?.toString()));
+    
+    let planBTotalRef = { value: planBTotal };
+    addItemsToPlan(altPlaces, foodCount, planBItems, planBBudget, planBTotalRef);
+    addItemsToPlan(altEvents, eventCount, planBItems, planBBudget, planBTotalRef);
+    addItemsToPlan(altLandmarks, landmarkCount, planBItems, planBBudget, planBTotalRef);
+    planBTotal = planBTotalRef.value;
+
+    return {
+        A: {
+            items: planAItems,
+            budget: planABudget,
+            totalSpent: planATotal
+        },
+        B: {
+            items: planBItems,
+            budget: planBBudget,
+            totalSpent: planBTotal
+        }
+    };
+}
+
+/**
+ * POST /api/plan/smart
+ * Smart trip planner that combines vector search with AI itinerary building
+ */
+app.post('/api/plan/smart', async (req, res) => {
+    const startTime = Date.now();
+
+    try {
+        const { query, location } = req.body;
+
+        if (!query || query.trim().length === 0) {
+            return res.status(400).json({ error: 'Search query is required' });
+        }
+
+        console.log('[Smart Planner] Query:', query);
+
+        // Parse the query to extract intent
+        const { budget, timeConstraint, preferences } = parseQueryIntent(query);
+        console.log('[Smart Planner] Parsed:', { budget, timeConstraint, preferences });
+
+        // Get query embedding for vector search
+        const queryEmbedding = await getQueryEmbedding(query);
+
+        // Initialize collections if needed
+        if (!redditCollection) {
+            redditCollection = db.collection('hidden_events');
+        }
+
+        // Search all collections in parallel (using NYC collections)
+        const searchLimit = 15;
+        console.log('[Smart Planner] Query embedding:', queryEmbedding ? `YES (${queryEmbedding.length} dims)` : 'NO');
+        
+        // Debug: Check if data has embeddings
+        const sampleRestaurant = await nycRestaurantsCollection.findOne({ embedding: { $exists: true } });
+        console.log('[Smart Planner] Sample restaurant has embedding:', sampleRestaurant ? `YES (${sampleRestaurant.embedding?.length || 0} dims)` : 'NO');
+
+        const [places, events, landmarks] = await Promise.all([
+            // Restaurants search (NYC)
+            queryEmbedding
+                ? nycRestaurantsCollection.aggregate([
+                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: searchLimit } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' }, type: 'place' } },
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(err => { console.error('[Smart Planner] Restaurants vector search error:', err.message, err.code); return []; })
+                : nycRestaurantsCollection.find({}).limit(searchLimit).project({ embedding: 0 }).toArray().catch(() => []),
+
+            // Events search (NYC)
+            queryEmbedding
+                ? nycEventsCollection.aggregate([
+                    { $vectorSearch: { index: 'event_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: searchLimit } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' }, type: 'event' } },
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(err => { console.error('[Smart Planner] Events vector search error:', err.message, err.code); return []; })
+                : nycEventsCollection.find({}).limit(searchLimit).project({ embedding: 0 }).toArray().catch(() => []),
+
+            // Landmarks search (NYC)
+            queryEmbedding
+                ? nycLandmarksCollection.aggregate([
+                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: searchLimit } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' }, type: 'landmark' } },
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(err => { console.error('[Smart Planner] Landmarks vector search error:', err.message, err.code); return []; })
+                : nycLandmarksCollection.find({}).limit(searchLimit).project({ embedding: 0 }).toArray().catch(() => [])
+        ]);
+
+        console.log(`[Smart Planner] Found: ${places.length} places, ${events.length} events, ${landmarks.length} landmarks`);
+
+        // Build optimized itineraries
+        const plans = await buildSmartItinerary(places, events, landmarks, budget, preferences);
+
+        res.json({
+            plans,
+            query,
+            parsedBudget: budget,
+            timeConstraint,
+            searchResults: {
+                places: places.length,
+                events: events.length,
+                landmarks: landmarks.length
+            },
+            took_ms: Date.now() - startTime
+        });
+
+    } catch (error) {
+        console.error('[Smart Planner] Error:', error);
+        res.status(500).json({ error: 'Failed to create plan' });
     }
 });
 
