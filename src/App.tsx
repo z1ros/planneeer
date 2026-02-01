@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Map3D, { LayerType } from './components/Map3D';
 import MapErrorBoundary from './components/MapErrorBoundary';
-import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, BudgetData, ReservationModal } from './components/map-overlay';
+import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, ReservationModal } from './components/map-overlay';
 import WelcomeScreen from './components/WelcomeScreen';
 import LoadingScreen from './components/LoadingScreen';
 import { ItineraryEvent } from './types';
@@ -1250,7 +1250,7 @@ function MapPage() {
           // Speak a summary of the itinerary
           speak(`I've created an itinerary for you: ${response.itinerary.title}. ${response.itinerary.overview} Click the speaker icon to hear the full details.`);
 
-          // Set route on map
+          // Set route on map with full stop data for rich popups
           const routePoints = [
             { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
             ...response.itinerary.stops
@@ -1259,7 +1259,15 @@ function MapPage() {
                 lat: stop.coordinates!.lat,
                 lng: stop.coordinates!.lng,
                 name: stop.name,
-                type: stop.type
+                type: stop.type,
+                // Include rich data for popups
+                arrivalTime: stop.arrivalTime,
+                departureTime: stop.departureTime,
+                duration: stop.duration,
+                cost: stop.cost,
+                whyVisit: stop.whyVisit,
+                whatToDo: stop.whatToDo,
+                proTip: stop.proTip,
               }))
           ];
 
@@ -1397,19 +1405,26 @@ function MapPage() {
         saveItinerary(response.itinerary, response.budget, itemNames);
         console.log('[App] Itinerary saved to localStorage');
 
-        // Set route data for map from detailed itinerary stops
-        // Map expects "points" array with {lat, lng, name, type} format
+        // Set route data for map from detailed itinerary stops with full data for rich popups
         const routePoints = [
           // Start with user location
           { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
-          // Then all the itinerary stops
+          // Then all the itinerary stops with rich data
           ...response.itinerary.stops
             .filter(stop => stop.coordinates)
             .map(stop => ({
               lat: stop.coordinates!.lat,
               lng: stop.coordinates!.lng,
               name: stop.name,
-              type: stop.type
+              type: stop.type,
+              // Include rich data for popups
+              arrivalTime: stop.arrivalTime,
+              departureTime: stop.departureTime,
+              duration: stop.duration,
+              cost: stop.cost,
+              whyVisit: stop.whyVisit,
+              whatToDo: stop.whatToDo,
+              proTip: stop.proTip,
             }))
         ];
 

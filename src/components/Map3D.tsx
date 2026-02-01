@@ -2537,7 +2537,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           document.head.appendChild(style);
         }
         
-        new mapboxgl.Marker(el)
+        const marker = new mapboxgl.Marker(el)
           .setLngLat([point.lng, point.lat])
           .addTo(mapInstance);
         
@@ -2549,6 +2549,218 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         el.addEventListener('mouseleave', () => {
           el.style.transform = 'scale(1) translateY(0)';
           el.style.filter = 'brightness(1)';
+        });
+
+        // Add click handler for popup
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          
+          // Get type icon and color
+          const typeConfig: { [key: string]: { icon: string; color: string; label: string; emoji: string } } = {
+            'start': { icon: 'fa-location-dot', color: '#10b981', label: 'Starting Point', emoji: '📍' },
+            'food': { icon: 'fa-utensils', color: '#f97316', label: 'Restaurant', emoji: '🍽️' },
+            'landmark': { icon: 'fa-landmark', color: '#8b5cf6', label: 'Landmark', emoji: '🏛️' },
+            'event': { icon: 'fa-calendar-star', color: '#ec4899', label: 'Event', emoji: '🎭' },
+            'activity': { icon: 'fa-person-running', color: '#3b82f6', label: 'Activity', emoji: '🎯' },
+          };
+          const config = typeConfig[point.type] || { icon: 'fa-map-pin', color: '#f97316', label: 'Stop', emoji: '📌' };
+          
+          // Calculate next stop info
+          const nextStop = index < points.length - 1 ? points[index + 1] : null;
+          
+          // Time display - format arrival and departure times
+          const timeDisplay = point.arrivalTime && point.departureTime 
+            ? `${point.arrivalTime} → ${point.departureTime}`
+            : point.arrivalTime || '';
+          
+          // Google Maps URLs
+          const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(point.name)}`;
+          const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`;
+          const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${point.lat},${point.lng}`;
+          
+          // For start point, show minimal popup
+          if (point.type === 'start') {
+            const startPopupHTML = `
+              <div class="itinerary-stop-popup" style="min-width: 220px; max-width: 260px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+                <div style="height: 4px; background: linear-gradient(90deg, #10b981, #10b98180);"></div>
+                <div style="padding: 16px;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(145deg, #10b981, #10b981cc); border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16,185,129,0.4);">
+                      <i class="fa-solid fa-flag-checkered" style="font-size: 18px; color: #fff;"></i>
+                    </div>
+                    <div>
+                      <h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #fff;">Your Starting Point</h3>
+                      <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.5);">Your adventure begins here!</p>
+                    </div>
+                  </div>
+                </div>
+                <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.06);">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-arrow-right" style="font-size: 10px; color: #10b981;"></i>
+                    <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Next: <span style="color: #fff; font-weight: 500;">${nextStop?.name || 'End'}</span></span>
+                  </div>
+                </div>
+              </div>
+            `;
+            
+            new mapboxgl.Popup({ 
+              maxWidth: '280px', 
+              className: 'dark-popup itinerary-popup',
+              closeButton: true,
+              closeOnClick: false,
+              offset: [0, -25],
+              focusAfterOpen: false
+            })
+              .setLngLat([point.lng, point.lat])
+              .setHTML(startPopupHTML)
+              .addTo(mapInstance);
+            return;
+          }
+          
+          const popupHTML = `
+            <div class="itinerary-stop-popup" style="min-width: 300px; max-width: 340px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;">
+              
+              <!-- Accent bar at top -->
+              <div style="height: 4px; background: linear-gradient(90deg, ${config.color}, ${config.color}80);"></div>
+              
+              <!-- Header with time range -->
+              <div style="padding: 16px 16px 12px; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);">
+                <!-- Time range banner -->
+                ${timeDisplay ? `
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; padding: 8px 12px; background: ${config.color}15; border-radius: 8px; border: 1px solid ${config.color}30;">
+                    <i class="fa-solid fa-clock" style="font-size: 12px; color: ${config.color};"></i>
+                    <span style="font-size: 14px; font-weight: 700; color: #fff; letter-spacing: 0.5px;">${timeDisplay}</span>
+                  </div>
+                ` : ''}
+                
+                <div style="display: flex; align-items: flex-start; gap: 14px;">
+                  <!-- Stop number badge -->
+                  <div style="position: relative;">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(145deg, ${config.color}, ${config.color}cc); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px ${config.color}50, inset 0 1px 0 rgba(255,255,255,0.2);">
+                      <span style="font-size: 20px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">${index + 1}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Title and type -->
+                  <div style="flex: 1; min-width: 0;">
+                    <h3 style="margin: 0 0 6px; font-size: 16px; font-weight: 700; color: #fff; line-height: 1.25;">${point.name}</h3>
+                    <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: ${config.color}20; border-radius: 20px; border: 1px solid ${config.color}40;">
+                      <i class="fa-solid ${config.icon}" style="font-size: 10px; color: ${config.color};"></i>
+                      <span style="font-size: 11px; color: ${config.color}; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;">${config.label}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Quick stats row -->
+              <div style="padding: 0 16px 12px; display: flex; gap: 8px;">
+                ${point.duration ? `
+                  <div style="flex: 1; padding: 10px 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); text-align: center;">
+                    <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 2px;">${point.duration}</div>
+                    <div style="font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;">Duration</div>
+                  </div>
+                ` : ''}
+                ${point.cost ? `
+                  <div style="flex: 1; padding: 10px 12px; background: rgba(16,185,129,0.08); border-radius: 10px; border: 1px solid rgba(16,185,129,0.2); text-align: center;">
+                    <div style="font-size: 15px; font-weight: 700; color: #10b981; margin-bottom: 2px;">${point.cost}</div>
+                    <div style="font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;">Est. Cost</div>
+                  </div>
+                ` : ''}
+              </div>
+              
+              <!-- What to do section -->
+              ${point.whatToDo ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                      <i class="fa-solid fa-lightbulb" style="font-size: 11px; color: ${config.color};"></i>
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">What to do</span>
+                    </div>
+                    <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5;">${point.whatToDo}</p>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Why visit section -->
+              ${point.whyVisit ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                      <i class="fa-solid fa-star" style="font-size: 11px; color: #fbbf24;"></i>
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Why visit</span>
+                    </div>
+                    <p style="margin: 0; font-size: 12px; color: rgba(255,255,255,0.7); line-height: 1.5;">${point.whyVisit}</p>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Pro tip -->
+              ${point.proTip ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 10px 12px; background: linear-gradient(135deg, rgba(251,191,36,0.1) 0%, rgba(251,191,36,0.05) 100%); border-radius: 10px; border: 1px solid rgba(251,191,36,0.2);">
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                      <span style="font-size: 14px;">💡</span>
+                      <div>
+                        <span style="font-size: 10px; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Pro Tip</span>
+                        <p style="margin: 4px 0 0; font-size: 12px; color: rgba(255,255,255,0.8); line-height: 1.4;">${point.proTip}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Next stop preview -->
+              ${nextStop ? `
+                <div style="padding: 0 16px 12px;">
+                  <div style="padding: 10px 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <span style="font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Next Stop</span>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 12px; color: rgba(255,255,255,0.8); font-weight: 500;">${nextStop.name}</span>
+                        <i class="fa-solid fa-arrow-right" style="font-size: 10px; color: ${config.color};"></i>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+              
+              <!-- Action buttons -->
+              <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; gap: 8px;">
+                  <a href="${directionsUrl}" target="_blank" rel="noopener" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 12px; background: linear-gradient(145deg, ${config.color}, ${config.color}dd); border-radius: 10px; color: #fff; text-decoration: none; font-size: 12px; font-weight: 600; transition: all 0.2s; box-shadow: 0 2px 8px ${config.color}40;">
+                    <i class="fa-solid fa-diamond-turn-right" style="font-size: 12px;"></i>
+                    Get Directions
+                  </a>
+                  <a href="${googleMapsUrl}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: rgba(255,255,255,0.08); border-radius: 10px; color: rgba(255,255,255,0.7); text-decoration: none; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1);" title="Open in Google Maps">
+                    <i class="fa-solid fa-map-location-dot" style="font-size: 14px;"></i>
+                  </a>
+                  <a href="${streetViewUrl}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; background: rgba(255,255,255,0.08); border-radius: 10px; color: rgba(255,255,255,0.7); text-decoration: none; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1);" title="Street View">
+                    <i class="fa-solid fa-street-view" style="font-size: 14px;"></i>
+                  </a>
+                </div>
+                
+                <!-- Progress indicator -->
+                <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
+                  <div style="flex: 1; height: 3px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                    <div style="width: ${((index + 1) / points.length) * 100}%; height: 100%; background: linear-gradient(90deg, ${config.color}, ${config.color}80); border-radius: 2px;"></div>
+                  </div>
+                  <span style="font-size: 10px; color: rgba(255,255,255,0.4); font-weight: 500;">Stop ${index}/${points.length - 1}</span>
+                </div>
+              </div>
+            </div>
+          `;
+
+          new mapboxgl.Popup({ 
+            maxWidth: '360px', 
+            className: 'dark-popup itinerary-popup',
+            closeButton: true,
+            closeOnClick: false,  // Allow multiple popups to stay open
+            offset: [0, -25],
+            focusAfterOpen: false
+          })
+            .setLngLat([point.lng, point.lat])
+            .setHTML(popupHTML)
+            .addTo(mapInstance);
         });
       });
 
