@@ -89,9 +89,10 @@ Real-time 3D visualization of Boston's MBTA transit system with restaurants, eve
 
 ## Contributors
 
-- [@kalxed](https://github.com/kalxed) - Kai Davidson
-- [@dormfinder4-lab](https://github.com/dormfinder4-lab)
-- [@ivan5355](https://github.com/ivan5355)
+- [@Z1ros](https://github.com/Z1ros) 
+- [@markhryt](https://github.com/markhryt)
+- [@akhilm2223](https://github.com/akhilm2223)
+- [@Joseg313](https://github.com/Joseg313)
 
 ## License
 
