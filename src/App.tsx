@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Map3D, { LayerType } from './components/Map3D';
 import MapErrorBoundary from './components/MapErrorBoundary';
-import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem } from './components/map-overlay';
+import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, BudgetData, ReservationModal } from './components/map-overlay';
 import WelcomeScreen from './components/WelcomeScreen';
 import LoadingScreen from './components/LoadingScreen';
 import { ItineraryEvent } from './types';
@@ -513,9 +513,8 @@ function NetworkPage() {
                   return (
                     <div
                       key={index}
-                      className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border overflow-hidden transition-all duration-300 cursor-pointer group shadow-[0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] ${
-                        isExpanded ? 'border-orange-500/50 scale-[1.02]' : 'border-white/10 hover:border-white/20'
-                      }`}
+                      className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-2xl border overflow-hidden transition-all duration-300 cursor-pointer group shadow-[0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.05)] ${isExpanded ? 'border-orange-500/50 scale-[1.02]' : 'border-white/10 hover:border-white/20'
+                        }`}
                       onClick={() => setExpandedId(isExpanded ? null : index)}
                     >
                       {/* Card Header with Photo */}
@@ -526,9 +525,8 @@ function NetworkPage() {
                         <div className="p-4 flex items-start gap-4">
                           {/* Avatar - Larger */}
                           <div className="relative shrink-0">
-                            <div className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
-                              isExpanded ? 'border-orange-500/70 shadow-[0_0_20px_rgba(249,115,22,0.3)]' : 'border-white/10 group-hover:border-white/20'
-                            }`}>
+                            <div className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition-all duration-300 ${isExpanded ? 'border-orange-500/70 shadow-[0_0_20px_rgba(249,115,22,0.3)]' : 'border-white/10 group-hover:border-white/20'
+                              }`}>
                               {match.user.photoUrl ? (
                                 <img src={match.user.photoUrl} alt={match.user.name} className="w-full h-full object-cover" />
                               ) : (
@@ -556,13 +554,12 @@ function NetworkPage() {
                               </div>
 
                               {/* Match Score */}
-                              <div className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
-                                match.sharedCount >= 3
-                                  ? 'bg-emerald-500/20 text-emerald-400'
-                                  : match.sharedCount >= 2
-                                    ? 'bg-orange-500/20 text-orange-400'
-                                    : 'bg-white/10 text-white/50'
-                              }`}>
+                              <div className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${match.sharedCount >= 3
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : match.sharedCount >= 2
+                                  ? 'bg-orange-500/20 text-orange-400'
+                                  : 'bg-white/10 text-white/50'
+                                }`}>
                                 <i className="fa-solid fa-heart text-[10px]"></i>
                                 {match.sharedCount} shared
                               </div>
@@ -779,15 +776,13 @@ function SettingsPage() {
                   <button
                     key={item.id}
                     onClick={() => setActiveSection(item.id as any)}
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-all duration-300 group ${
-                      activeSection === item.id
-                        ? 'bg-orange-500/20 text-white shadow-lg'
-                        : 'text-white/50 hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-medium transition-all duration-300 group ${activeSection === item.id
+                      ? 'bg-orange-500/20 text-white shadow-lg'
+                      : 'text-white/50 hover:text-white hover:bg-white/5'
+                      }`}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                      activeSection === item.id ? 'bg-orange-500/30' : 'bg-white/5 group-hover:bg-white/10'
-                    }`}>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${activeSection === item.id ? 'bg-orange-500/30' : 'bg-white/5 group-hover:bg-white/10'
+                      }`}>
                       <i className={`fa-solid ${item.icon} text-sm ${activeSection === item.id ? 'text-orange-400' : 'opacity-60 group-hover:opacity-100'}`}></i>
                     </div>
                     <span>{item.label}</span>
@@ -990,11 +985,10 @@ function SettingsPage() {
                             <button
                               key={option.id}
                               onClick={() => setTravelPrefs({ ...travelPrefs, preferredBudget: option.id as any })}
-                              className={`relative p-5 rounded-2xl border-2 transition-all duration-300 text-center group overflow-hidden ${
-                                travelPrefs.preferredBudget === option.id
-                                  ? 'border-orange-500 scale-[1.02] shadow-lg shadow-orange-500/20'
-                                  : 'border-white/10 hover:border-white/20 hover:scale-[1.01]'
-                              }`}
+                              className={`relative p-5 rounded-2xl border-2 transition-all duration-300 text-center group overflow-hidden ${travelPrefs.preferredBudget === option.id
+                                ? 'border-orange-500 scale-[1.02] shadow-lg shadow-orange-500/20'
+                                : 'border-white/10 hover:border-white/20 hover:scale-[1.01]'
+                                }`}
                             >
                               <div className={`absolute inset-0 bg-gradient-to-br ${option.gradient} transition-opacity ${travelPrefs.preferredBudget === option.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}></div>
                               <div className="relative">
@@ -1003,9 +997,8 @@ function SettingsPage() {
                                     <i className="fa-solid fa-check text-white text-[10px]"></i>
                                   </div>
                                 )}
-                                <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3 transition-all ${
-                                  travelPrefs.preferredBudget === option.id ? 'bg-orange-500 shadow-lg shadow-orange-500/30' : 'bg-white/10 group-hover:bg-white/15'
-                                }`}>
+                                <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3 transition-all ${travelPrefs.preferredBudget === option.id ? 'bg-orange-500 shadow-lg shadow-orange-500/30' : 'bg-white/10 group-hover:bg-white/15'
+                                  }`}>
                                   <i className={`fa-solid ${option.icon} text-xl ${travelPrefs.preferredBudget === option.id ? 'text-white' : 'text-white/60'}`}></i>
                                 </div>
                                 <div className={`font-semibold text-sm mb-1 ${travelPrefs.preferredBudget === option.id ? 'text-white' : 'text-white/70'}`}>{option.label}</div>
@@ -1026,15 +1019,13 @@ function SettingsPage() {
                         ].map((option) => (
                           <div
                             key={option.key}
-                            className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer group ${
-                              travelPrefs[option.key as keyof TravelPreferences] ? 'bg-white/5 border-white/10' : 'border-transparent hover:bg-white/5'
-                            }`}
+                            className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer group ${travelPrefs[option.key as keyof TravelPreferences] ? 'bg-white/5 border-white/10' : 'border-transparent hover:bg-white/5'
+                              }`}
                             onClick={() => setTravelPrefs({ ...travelPrefs, [option.key]: !travelPrefs[option.key as keyof TravelPreferences] })}
                           >
                             <div className="flex items-center gap-4">
-                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
-                                travelPrefs[option.key as keyof TravelPreferences] ? 'bg-orange-500/20' : 'bg-white/5 group-hover:bg-white/10'
-                              }`}>
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${travelPrefs[option.key as keyof TravelPreferences] ? 'bg-orange-500/20' : 'bg-white/5 group-hover:bg-white/10'
+                                }`}>
                                 <i className={`fa-solid ${option.icon} ${travelPrefs[option.key as keyof TravelPreferences] ? 'text-orange-400' : 'text-white/40'}`}></i>
                               </div>
                               <div>
@@ -1042,12 +1033,10 @@ function SettingsPage() {
                                 <div className="text-white/40 text-xs">{option.desc}</div>
                               </div>
                             </div>
-                            <div className={`w-14 h-8 rounded-full transition-all duration-300 relative ${
-                              travelPrefs[option.key as keyof TravelPreferences] ? 'bg-gradient-to-r from-orange-500 to-orange-400 shadow-lg shadow-orange-500/30' : 'bg-white/20'
-                            }`}>
-                              <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${
-                                travelPrefs[option.key as keyof TravelPreferences] ? 'left-7' : 'left-1'
-                              }`}></div>
+                            <div className={`w-14 h-8 rounded-full transition-all duration-300 relative ${travelPrefs[option.key as keyof TravelPreferences] ? 'bg-gradient-to-r from-orange-500 to-orange-400 shadow-lg shadow-orange-500/30' : 'bg-white/20'
+                              }`}>
+                              <div className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${travelPrefs[option.key as keyof TravelPreferences] ? 'left-7' : 'left-1'
+                                }`}></div>
                             </div>
                           </div>
                         ))}
@@ -1077,25 +1066,22 @@ function SettingsPage() {
                         <button
                           key={option.name}
                           onClick={() => toggleDietary(option.name)}
-                          className={`relative p-4 rounded-xl border-2 transition-all duration-300 text-left group overflow-hidden ${
-                            travelPrefs.dietaryRestrictions.includes(option.name)
-                              ? 'border-emerald-500 bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
-                              : 'border-white/10 hover:border-white/20 hover:bg-white/5'
-                          }`}
+                          className={`relative p-4 rounded-xl border-2 transition-all duration-300 text-left group overflow-hidden ${travelPrefs.dietaryRestrictions.includes(option.name)
+                            ? 'border-emerald-500 bg-emerald-500/10 shadow-lg shadow-emerald-500/10'
+                            : 'border-white/10 hover:border-white/20 hover:bg-white/5'
+                            }`}
                         >
                           {travelPrefs.dietaryRestrictions.includes(option.name) && (
                             <div className="absolute top-2 right-2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
                               <i className="fa-solid fa-check text-white text-[10px]"></i>
                             </div>
                           )}
-                          <div className={`w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-all ${
-                            travelPrefs.dietaryRestrictions.includes(option.name)
-                              ? 'bg-emerald-500/20'
-                              : 'bg-white/5 group-hover:bg-white/10'
-                          }`}>
-                            <i className={`fa-solid ${option.icon} text-lg ${
-                              travelPrefs.dietaryRestrictions.includes(option.name) ? 'text-emerald-400' : 'text-white/40'
-                            }`}></i>
+                          <div className={`w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-all ${travelPrefs.dietaryRestrictions.includes(option.name)
+                            ? 'bg-emerald-500/20'
+                            : 'bg-white/5 group-hover:bg-white/10'
+                            }`}>
+                            <i className={`fa-solid ${option.icon} text-lg ${travelPrefs.dietaryRestrictions.includes(option.name) ? 'text-emerald-400' : 'text-white/40'
+                              }`}></i>
                           </div>
                           <span className={`text-sm font-medium ${travelPrefs.dietaryRestrictions.includes(option.name) ? 'text-white' : 'text-white/60'}`}>{option.name}</span>
                         </button>
@@ -1182,6 +1168,10 @@ function MapPage() {
     address: '200 W 26th St, New York, NY 10001'
   });
 
+  // Reservation Modal state - triggered by voice commands like "book a reservation..."
+  const [reservationModalOpen, setReservationModalOpen] = useState(false);
+  const [reservationMessage, setReservationMessage] = useState('');
+
   const handleDisplayStart = useCallback((mode: 'voice' | 'chat') => {
     setShowWelcome(false);
     if (mode === 'voice') {
@@ -1223,11 +1213,11 @@ function MapPage() {
       // Check if this is a conversational query that should get a spoken response
       if (isConversationalQuery(query) && !isItineraryQuery(query)) {
         console.log('[App] Detected conversational query, getting AI response:', query);
-        
+
         // Get AI response and speak it
         const response = await speakAIResponse(query);
         console.log('[App] AI spoke:', response?.substring(0, 50) + '...');
-        
+
         // Also do a search to show results on map
         const searchType: SearchType = activeLayer === 'restaurants' || activeLayer === 'events' || activeLayer === 'landmarks'
           ? activeLayer
@@ -1235,31 +1225,31 @@ function MapPage() {
         const searchResponse = await performSearch(query, 15, searchType);
         setSearchResults(searchResponse);
         setDetailedItinerary(null);
-        
+
       } else if (isItineraryQuery(query)) {
         // Check if this looks like an itinerary request
         console.log('[App] Detected itinerary query, creating plan:', query);
         setSearchResults(null);
         setDetailedItinerary(null);
-        
+
         const response = await createItineraryFromQuery(query, {
           lat: userLocation.lat,
           lng: userLocation.lng,
           address: userLocation.address
         });
-        
+
         if (response.success && response.itinerary) {
           setDetailedItinerary(response.itinerary);
           setBudget(response.budget);
-          
+
           // Save to localStorage
           saveItinerary(response.itinerary, response.budget, query);
           addRecentSearch(query);
           console.log('[App] Itinerary saved to localStorage');
-          
+
           // Speak a summary of the itinerary
           speak(`I've created an itinerary for you: ${response.itinerary.title}. ${response.itinerary.overview} Click the speaker icon to hear the full details.`);
-          
+
           // Set route on map
           const routePoints = [
             { lat: userLocation.lat, lng: userLocation.lng, name: 'Start', type: 'start' },
@@ -1272,11 +1262,11 @@ function MapPage() {
                 type: stop.type
               }))
           ];
-          
+
           if (routePoints.length >= 2) {
             setItineraryRouteData({ points: routePoints });
           }
-          
+
           console.log('[App] Itinerary created:', response.itinerary.title);
         }
       } else {
@@ -1287,7 +1277,7 @@ function MapPage() {
 
         console.log('[App] Performing vector search:', query, '| Filter:', searchType || 'all');
         setDetailedItinerary(null);
-        
+
         const response = await performSearch(query, 30, searchType);
         console.log('[App] Search results:', response);
         setSearchResults(response);
@@ -1322,16 +1312,16 @@ function MapPage() {
         console.log('[App] Item already in itinerary:', item.name);
         return prev;
       }
-      
+
       // Map type to icon and category
       const typeMap = {
         restaurant: { icon: 'fa-utensils', iconBg: 'bg-orange-500', category: 'food' as const },
         event: { icon: 'fa-calendar-star', iconBg: 'bg-purple-500', category: 'activity' as const },
         landmark: { icon: 'fa-landmark', iconBg: 'bg-blue-500', category: 'activity' as const }
       };
-      
+
       const config = typeMap[item.type] || typeMap.landmark;
-      
+
       const newItem: ItineraryItem = {
         id: item.id,
         name: item.name,
@@ -1347,7 +1337,7 @@ function MapPage() {
         coordinates: item.coordinates,
         tags: item.category ? [item.category] : []
       };
-      
+
       console.log('[App] Added to itinerary:', item.name);
       return [...prev, newItem];
     });
@@ -1366,13 +1356,13 @@ function MapPage() {
   // Build detailed itinerary from saved items using Gemini
   const handleBuildItinerary = useCallback(async () => {
     if (savedItems.length === 0) return;
-    
+
     setIsBuildingItinerary(true);
-    
+
     try {
       const itemNames = savedItems.map(item => item.name).join(', ');
       console.log('[App] Building detailed itinerary for:', itemNames);
-      
+
       // Prepare items for the detailed itinerary builder
       const itemsForApi = savedItems.map(item => ({
         id: item.id,
@@ -1385,7 +1375,7 @@ function MapPage() {
         lat: item.coordinates?.lat,
         lng: item.coordinates?.lng
       }));
-      
+
       const response = await buildDetailedItinerary({
         items: itemsForApi,
         userLocation: {
@@ -1394,19 +1384,19 @@ function MapPage() {
           address: userLocation.address
         }
       });
-      
+
       if (response.success && response.itinerary) {
         // Store the detailed itinerary
         setDetailedItinerary(response.itinerary);
-        
+
         // Update budget
         setBudget(response.budget);
-        
+
         // Save to localStorage
         const itemNames = savedItems.map(item => item.name).join(', ');
         saveItinerary(response.itinerary, response.budget, itemNames);
         console.log('[App] Itinerary saved to localStorage');
-        
+
         // Set route data for map from detailed itinerary stops
         // Map expects "points" array with {lat, lng, name, type} format
         const routePoints = [
@@ -1422,18 +1412,18 @@ function MapPage() {
               type: stop.type
             }))
         ];
-        
+
         console.log('[App] Setting itinerary route with', routePoints.length, 'points');
-        
+
         if (routePoints.length >= 2) {
           setItineraryRouteData({
             points: routePoints
           });
         }
-        
+
         // Clear saved items since they're now in the itinerary
         setSavedItems([]);
-        
+
         console.log('[App] Detailed itinerary built:', response.itinerary.title);
       }
     } catch (error) {
@@ -1526,6 +1516,45 @@ function MapPage() {
   const handleVoiceClick = useCallback(() => {
     console.log('[App] Voice button clicked');
     setVoiceOnboardingActive(true);
+  }, []);
+
+  // Handle voice-triggered reservation requests (e.g., "book a reservation at Carbone for tomorrow")
+  // Auto-submits the reservation request directly to the AI agent
+  const handleReservationRequest = useCallback(async (message: string) => {
+    console.log('[App] Auto-submitting reservation request:', message);
+    const fullMessage = message ? `Book a reservation ${message}` : 'Book a reservation';
+
+    // Speak that we're processing
+    speak("Got it! I'm booking that reservation for you now. This may take a moment.");
+
+    try {
+      const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+      const response = await fetch(`${API_BASE_URL}/api/reservations/auto-book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: fullMessage,
+          phone: '' // Optional - can be added later if needed
+        })
+      });
+
+      const result = await response.json();
+      console.log('[App] Reservation result:', result);
+
+      if (result.success) {
+        // Speak success message
+        const successMessage = result.message || `Great news! Your reservation has been confirmed.`;
+        speak(successMessage);
+      } else {
+        // Speak error/pending message
+        const errorMessage = result.message || "I wasn't able to complete the reservation. Please try again or use manual booking.";
+        speak(errorMessage);
+      }
+    } catch (error) {
+      console.error('[App] Reservation error:', error);
+      speak("Sorry, I encountered an error while trying to book that. Please try again.");
+    }
   }, []);
 
   const handleItemClick = useCallback((item: ItineraryItem) => {
@@ -1625,7 +1654,18 @@ function MapPage() {
         <BottomSearchBar
           onSearch={handleSearch}
           onVoiceClick={handleVoiceClick}
+          onReservationRequest={handleReservationRequest}
           activeLayer={activeLayer}
+        />
+
+        {/* Voice-triggered Reservation Modal */}
+        <ReservationModal
+          isOpen={reservationModalOpen}
+          onClose={() => {
+            setReservationModalOpen(false);
+            setReservationMessage('');
+          }}
+          initialMessage={reservationMessage}
         />
 
         {/* Create Plan Button Overlay - Only visible when search results exist but no plan yet */}

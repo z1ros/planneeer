@@ -5,6 +5,7 @@ type LayerType = 'transit' | 'restaurants' | 'events' | 'landmarks' | null;
 interface BottomSearchBarProps {
   onSearch?: (query: string) => void;
   onVoiceClick?: () => void;
+  onReservationRequest?: (message: string) => void;
   placeholder?: string;
   activeLayer?: LayerType;
 }
@@ -21,6 +22,30 @@ function getPlaceholder(layer: LayerType): string {
     default:
       return "Try: 'I want to visit Brooklyn Bridge, get sushi, and see a show'";
   }
+}
+
+// Reservation keyword patterns
+const RESERVATION_PATTERNS = [
+  /^book a reservation\s*(.*)/i,
+  /^make a reservation\s*(.*)/i,
+  /^reserve a table\s*(.*)/i,
+  /^book a table\s*(.*)/i,
+  /^book (?:at|for)\s*(.*)/i,
+];
+
+function detectReservationIntent(transcript: string): { isReservation: boolean; details: string } {
+  const trimmed = transcript.trim();
+
+  for (const pattern of RESERVATION_PATTERNS) {
+    const match = trimmed.match(pattern);
+    if (match) {
+      const details = match[1]?.trim() || '';
+      console.log('[Voice] Reservation intent detected:', details || trimmed);
+      return { isReservation: true, details: details || trimmed };
+    }
+  }
+
+  return { isReservation: false, details: '' };
 }
 
 // Speech Recognition types for TypeScript
@@ -70,6 +95,7 @@ declare global {
 export default function BottomSearchBar({
   onSearch,
   onVoiceClick,
+  onReservationRequest,
   placeholder,
   activeLayer
 }: BottomSearchBarProps) {
@@ -88,7 +114,7 @@ export default function BottomSearchBar({
   // Initialize speech recognition with 3-second silence buffer
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
+
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true; // Keep listening continuously
@@ -141,13 +167,13 @@ export default function BottomSearchBar({
         }
 
         if (final) {
-          console.log('[Voice] Got phrase:', final);
-          // Accumulate transcripts
-          accumulatedTranscriptRef.current = accumulatedTranscriptRef.current 
-            ? `${accumulatedTranscriptRef.current} ${final}` 
-            : final;
-          setSearchQuery(accumulatedTranscriptRef.current);
+          console.log('[Voice] Final transcript:', final);
+          setSearchQuery(final);
           setInterimTranscript('');
+          // Auto-search after voice input
+          setTimeout(() => {
+            onSearch?.(final.trim());
+          }, 300);
         } else {
           setInterimTranscript(interim);
         }
@@ -223,7 +249,7 @@ export default function BottomSearchBar({
         recognitionRef.current.abort();
       }
     };
-  }, [onSearch]);
+  }, [onSearch, onReservationRequest]);
 
   const handleVoiceButtonClick = useCallback(() => {
     if (!recognitionRef.current) {
@@ -262,7 +288,15 @@ export default function BottomSearchBar({
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
     }
-    onSearch?.(searchQuery.trim());
+
+    // Check for reservation intent in typed input too
+    const { isReservation, details } = detectReservationIntent(searchQuery);
+    if (isReservation && onReservationRequest) {
+      onReservationRequest(details);
+      setSearchQuery('');
+    } else {
+      onSearch?.(searchQuery.trim());
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -292,7 +326,7 @@ export default function BottomSearchBar({
           Listening... Speak now
         </div>
       )}
-      
+
       <form
         className={`flex items-center gap-3 bg-gradient-to-r from-slate-900/90 to-slate-800/85 backdrop-blur-xl rounded-full border ${isListening ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.4)]' : 'border-white/10'} py-2 pr-2 pl-6 shadow-[0_4px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] transition-all duration-300`}
         onSubmit={handleSubmit}
@@ -317,24 +351,24 @@ export default function BottomSearchBar({
         )}
         <button
           type="button"
-          className={`w-12 h-12 rounded-full border-none text-white text-lg cursor-pointer transition-all duration-200 flex items-center justify-center ${
-            isListening 
-              ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse' 
+          className={`w-12 h-12 rounded-full border-none text-white text-lg cursor-pointer transition-all duration-200 flex items-center justify-center ${isListening
+              ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse'
               : 'bg-orange-500 shadow-[0_4px_12px_rgba(249,115,22,0.4)] hover:bg-orange-600 hover:scale-105 active:scale-[0.98]'
-          }`}
+            }`}
           onClick={handleVoiceButtonClick}
           title={isListening ? 'Stop listening' : 'Voice Search - Click and speak'}
         >
           <i className={`fa-solid ${isListening ? 'fa-stop' : 'fa-microphone'}`}></i>
         </button>
       </form>
-      
+
       {/* Voice tips */}
       {!isListening && !searchQuery && (
         <p className="text-center text-white/30 text-[11px] mt-2">
-          Click the mic and say: "I want to visit Brooklyn Bridge, get Indian food, and see a football game"
+          Say: "Book a reservation at Carbone for tomorrow at 7pm" or "I want Indian food and a show"
         </p>
       )}
     </div>
   );
 }
+
