@@ -4,6 +4,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import { createMatchesRouter } from './routes/matches.js';
+import { executeAutoReservation } from './fetchAgent.js';
+import { closeBrowser } from './browserAutomation.js';
 
 dotenv.config();
 
@@ -680,6 +682,39 @@ app.get('/api/mta/:line', async (req, res) => {
     } catch (error) {
         console.error(`[MTA] Error fetching ${line}:`, error.message);
         res.status(500).json({ error: `Failed to fetch MTA feed: ${error.message}` });
+    }
+});
+
+// ===========================================
+// FETCH.AI AUTO-RESERVATION API
+// ===========================================
+
+app.post('/api/reservations/auto-book', async (req, res) => {
+    try {
+        const { message, phone } = req.body;
+
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message is required'
+            });
+        }
+
+        console.log('[AutoReservation] Starting reservation for:', message);
+
+        const guestDetails = phone ? { phone } : null;
+        const result = await executeAutoReservation(message, guestDetails);
+
+        // Clean up browser after reservation
+        await closeBrowser();
+
+        res.json(result);
+    } catch (error) {
+        console.error('[AutoReservation] Error:', error.message);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to make reservation'
+        });
     }
 });
 
@@ -2103,17 +2138,17 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
     const wantsMainlyFood = preferences.wantsFood && !preferences.wantsEvents && !preferences.wantsLandmarks;
     const wantsMainlyEvents = preferences.wantsEvents && !preferences.wantsFood && !preferences.wantsLandmarks;
     const wantsMainlyLandmarks = preferences.wantsLandmarks && !preferences.wantsFood && !preferences.wantsEvents;
-    
+
     // Score and tag all items
     const scoredPlaces = places.map(p => ({ ...p, itemType: 'place', score: p.score || 0.5 }));
     const scoredEvents = events.map(e => ({ ...e, itemType: 'event', score: e.score || 0.5 }));
     const scoredLandmarks = landmarks.map(l => ({ ...l, itemType: 'landmark', score: l.score || 0.5 }));
-    
+
     // Sort each category by relevance score
     scoredPlaces.sort((a, b) => (b.score || 0) - (a.score || 0));
     scoredEvents.sort((a, b) => (b.score || 0) - (a.score || 0));
     scoredLandmarks.sort((a, b) => (b.score || 0) - (a.score || 0));
-    
+
     console.log(`[Smart Planner] Building itinerary - wantsFood: ${preferences.wantsFood}, wantsEvents: ${preferences.wantsEvents}, wantsLandmarks: ${preferences.wantsLandmarks}`);
     console.log(`[Smart Planner] Available: ${scoredPlaces.length} places, ${scoredEvents.length} events, ${scoredLandmarks.length} landmarks`);
 
@@ -2124,7 +2159,7 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
 
     // Determine how many of each type - SIMPLIFIED: just 1 main item for focused requests
     let foodCount = 0, eventCount = 0, landmarkCount = 0;
-    
+
     if (wantsMainlyFood) {
         // User wants food - give them just 1 best restaurant
         foodCount = 1;
@@ -2139,7 +2174,7 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
         if (preferences.wantsFood) foodCount = 1;
         if (preferences.wantsEvents) eventCount = 1;
         if (preferences.wantsLandmarks) landmarkCount = 1;
-        
+
         // If nothing specific, give 1 food + 1 landmark
         if (foodCount + eventCount + landmarkCount === 0) {
             foodCount = 1;
@@ -2152,17 +2187,17 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
         let added = 0;
         for (const item of items) {
             if (added >= count) break;
-            
+
             const itineraryItem = buildItineraryItem(item, item.itemType, planItems.length);
             const newTotal = planTotalRef.value + itineraryItem.cost;
-            
+
             // Check budget if specified
             if (budget && newTotal > budget) continue;
-            
+
             planItems.push(itineraryItem);
             planTotalRef.value = newTotal;
             added++;
-            
+
             if (itineraryItem.category === 'food') {
                 planBudgetRef.food += itineraryItem.cost;
             } else if (itineraryItem.category === 'activity') {
@@ -2171,7 +2206,7 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
         }
         return added;
     };
-    
+
     let planATotalRef = { value: planATotal };
     addItemsToPlan(scoredPlaces, foodCount, planAItems, planABudget, planATotalRef);
     addItemsToPlan(scoredEvents, eventCount, planAItems, planABudget, planATotalRef);
@@ -2203,7 +2238,7 @@ async function buildSmartItinerary(places, events, landmarks, budget, preference
     const altPlaces = scoredPlaces.filter(p => !planAIds.has(p._id?.toString()));
     const altEvents = scoredEvents.filter(e => !planAIds.has(e._id?.toString()));
     const altLandmarks = scoredLandmarks.filter(l => !planAIds.has(l._id?.toString()));
-    
+
     let planBTotalRef = { value: planBTotal };
     addItemsToPlan(altPlaces, foodCount, planBItems, planBBudget, planBTotalRef);
     addItemsToPlan(altEvents, eventCount, planBItems, planBBudget, planBTotalRef);
@@ -2255,7 +2290,7 @@ app.post('/api/plan/smart', async (req, res) => {
         // Search all collections in parallel (using NYC collections)
         const searchLimit = 15;
         console.log('[Smart Planner] Query embedding:', queryEmbedding ? `YES (${queryEmbedding.length} dims)` : 'NO');
-        
+
         // Debug: Check if data has embeddings
         const sampleRestaurant = await nycRestaurantsCollection.findOne({ embedding: { $exists: true } });
         console.log('[Smart Planner] Sample restaurant has embedding:', sampleRestaurant ? `YES (${sampleRestaurant.embedding?.length || 0} dims)` : 'NO');

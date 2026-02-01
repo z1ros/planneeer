@@ -449,13 +449,13 @@ async function executeReservation(reservationDetails, guestDetails = null) {
         let status, message;
         if (confirmationSuccess) {
             status = 'reservation_completed';
-            message = `Reservation completed for ${restaurant}! Confirmation page: ${currentUrl}`;
+            message = `Reservation completed for ${restaurant}! Check the link below for details.`;
         } else if (guestDetailsFilled) {
             status = 'guest_details_filled';
-            message = `Guest details filled for ${restaurant}. Please confirm manually at: ${currentUrl}`;
+            message = `Guest details filled for ${restaurant}. Please confirm manually using the link below.`;
         } else {
             status = 'reservation_page_reached';
-            message = `Navigated to reservation page for ${restaurant}. Please complete booking at: ${currentUrl}`;
+            message = `Navigated to reservation page for ${restaurant}. Complete your booking using the link below.`;
         }
 
         return {
