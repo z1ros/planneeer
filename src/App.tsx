@@ -122,7 +122,7 @@ function JourneyPage() {
       </div>
 
       <div className="absolute inset-0 pl-24 pr-6 py-6 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-white/5 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-orange-500/50 [&::-webkit-scrollbar-thumb]:rounded-full">
-        
+
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -161,11 +161,10 @@ function JourneyPage() {
                   <div
                     key={saved.id}
                     onClick={() => setSelectedItinerary(saved)}
-                    className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-xl border overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${
-                      selectedItinerary?.id === saved.id
+                    className={`bg-gradient-to-b from-slate-800/80 to-slate-900/90 backdrop-blur-xl rounded-xl border overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${selectedItinerary?.id === saved.id
                         ? 'border-orange-500/50 shadow-lg shadow-orange-500/10'
                         : 'border-white/10 hover:border-white/20'
-                    }`}
+                      }`}
                   >
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -249,7 +248,7 @@ function JourneyPage() {
                 </div>
                 <h2 className="text-white font-bold text-xl">{selectedItinerary.itinerary.title}</h2>
                 <p className="text-white/40 text-sm mt-1">{selectedItinerary.itinerary.overview}</p>
-                
+
                 {/* Stats */}
                 <div className="flex gap-2 mt-4">
                   <div className="flex-1 bg-white/5 rounded-lg p-2.5 border border-white/10">
@@ -297,7 +296,7 @@ function JourneyPage() {
                         <div className="text-white/30 text-[10px]">{stop.duration}</div>
                       </div>
                     </div>
-                    
+
                     {/* Transit to next */}
                     {stop.transitToNext && index < selectedItinerary.itinerary.stops.length - 1 && (
                       <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-2 text-xs text-white/40">
@@ -1534,42 +1533,19 @@ function MapPage() {
   }, []);
 
   // Handle voice-triggered reservation requests (e.g., "book a reservation at Carbone for tomorrow")
-  // Auto-submits the reservation request directly to the AI agent
-  const handleReservationRequest = useCallback(async (message: string) => {
-    console.log('[App] Auto-submitting reservation request:', message);
+  // Opens the reservation modal with the details pre-filled
+  const handleReservationRequest = useCallback((message: string) => {
+    console.log('[App] Opening reservation modal with:', message);
+
+    // Build the full reservation message
     const fullMessage = message ? `Book a reservation ${message}` : 'Book a reservation';
 
-    // Speak that we're processing
-    speak("Got it! I'm booking that reservation for you now. This may take a moment.");
+    // Set the message and open the modal
+    setReservationMessage(fullMessage);
+    setReservationModalOpen(true);
 
-    try {
-      const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
-
-      const response = await fetch(`${API_BASE_URL}/api/reservations/auto-book`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: fullMessage,
-          phone: '' // Optional - can be added later if needed
-        })
-      });
-
-      const result = await response.json();
-      console.log('[App] Reservation result:', result);
-
-      if (result.success) {
-        // Speak success message
-        const successMessage = result.message || `Great news! Your reservation has been confirmed.`;
-        speak(successMessage);
-      } else {
-        // Speak error/pending message
-        const errorMessage = result.message || "I wasn't able to complete the reservation. Please try again or use manual booking.";
-        speak(errorMessage);
-      }
-    } catch (error) {
-      console.error('[App] Reservation error:', error);
-      speak("Sorry, I encountered an error while trying to book that. Please try again.");
-    }
+    // Speak confirmation that the modal is opening
+    speak("Opening the reservation form. I've pre-filled the details you mentioned.");
   }, []);
 
   const handleItemClick = useCallback((item: ItineraryItem) => {

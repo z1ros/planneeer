@@ -103,7 +103,7 @@ export default function BottomSearchBar({
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSpeechTimeRef = useRef<number>(Date.now());
   const shouldKeepListeningRef = useRef<boolean>(false);
   const accumulatedTranscriptRef = useRef<string>('');
@@ -129,20 +129,20 @@ export default function BottomSearchBar({
         }
       };
 
-      // Start silence timeout - stops listening after 3 seconds of silence
+      // Start silence timeout - stops listening after 6 seconds of silence
       const startSilenceTimeout = () => {
         clearSilenceTimeout();
         silenceTimeoutRef.current = setTimeout(() => {
-          console.log('[Voice] 3 seconds of silence - finalizing...');
+          console.log('[Voice] 6 seconds of silence - finalizing...');
           shouldKeepListeningRef.current = false;
           if (recognitionRef.current) {
             recognitionRef.current.stop();
           }
-        }, 3000); // 3 second silence buffer
+        }, 6000); // 6 second silence buffer for better tolerance
       };
 
       recognition.onstart = () => {
-        console.log('[Voice] Started listening (3s silence buffer active)...');
+        console.log('[Voice] Started listening (6s silence buffer active)...');
         setIsListening(true);
         setInterimTranscript('');
         lastSpeechTimeRef.current = Date.now();
@@ -170,10 +170,48 @@ export default function BottomSearchBar({
           console.log('[Voice] Final transcript:', final);
           setSearchQuery(final);
           setInterimTranscript('');
-          // Auto-search after voice input
-          setTimeout(() => {
-            onSearch?.(final.trim());
-          }, 300);
+
+          // Check for reservation keywords
+          const lowerFinal = final.toLowerCase();
+          const reservationKeywords = [
+            'book a reservation',
+            'make a reservation',
+            'reserve a table',
+            'book a table',
+            'make a booking',
+            'reserve at',
+            'book at',
+            'reservation at',
+            'reservation for'
+          ];
+
+          const isReservationRequest = reservationKeywords.some(keyword => lowerFinal.includes(keyword));
+
+          if (isReservationRequest && onReservationRequest) {
+            console.log('[Voice] Reservation keyword detected!');
+            // Extract the restaurant/details part after the keyword
+            let reservationDetails = final;
+            for (const keyword of reservationKeywords) {
+              if (lowerFinal.includes(keyword)) {
+                const index = lowerFinal.indexOf(keyword);
+                reservationDetails = final.substring(index + keyword.length).trim();
+                break;
+              }
+            }
+            // If no details extracted, use the full query
+            if (!reservationDetails) {
+              reservationDetails = final;
+            }
+            console.log('[Voice] Reservation details:', reservationDetails);
+            setTimeout(() => {
+              onReservationRequest(reservationDetails);
+            }, 300);
+          } else {
+            // Regular search
+            setTimeout(() => {
+              onSearch?.(final.trim());
+            }, 300);
+          }
         } else {
           setInterimTranscript(interim);
         }
@@ -204,7 +242,7 @@ export default function BottomSearchBar({
 
       recognition.onend = () => {
         console.log('[Voice] Recognition ended, shouldKeepListening:', shouldKeepListeningRef.current);
-        
+
         // Check if we should restart (browser stopped but user hasn't clicked stop)
         if (shouldKeepListeningRef.current) {
           console.log('[Voice] Auto-restarting recognition...');
@@ -220,11 +258,11 @@ export default function BottomSearchBar({
           }, 100);
           return;
         }
-        
+
         // Actually stopping - finalize everything
         clearSilenceTimeout();
         setIsListening(false);
-        
+
         // Auto-search with collected query
         const finalQuery = accumulatedTranscriptRef.current.trim();
         if (finalQuery) {
@@ -352,8 +390,8 @@ export default function BottomSearchBar({
         <button
           type="button"
           className={`w-12 h-12 rounded-full border-none text-white text-lg cursor-pointer transition-all duration-200 flex items-center justify-center ${isListening
-              ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse'
-              : 'bg-orange-500 shadow-[0_4px_12px_rgba(249,115,22,0.4)] hover:bg-orange-600 hover:scale-105 active:scale-[0.98]'
+            ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse'
+            : 'bg-orange-500 shadow-[0_4px_12px_rgba(249,115,22,0.4)] hover:bg-orange-600 hover:scale-105 active:scale-[0.98]'
             }`}
           onClick={handleVoiceButtonClick}
           title={isListening ? 'Stop listening' : 'Voice Search - Click and speak'}

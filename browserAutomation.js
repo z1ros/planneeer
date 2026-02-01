@@ -374,6 +374,72 @@ function getCurrentUrl(page) {
     return page.url();
 }
 
+/**
+ * Check if OpenTable is requesting a verification code
+ * @param {Object} page - Playwright page instance
+ * @returns {Promise<boolean>} - True if verification code input is detected
+ */
+async function checkForVerificationCode(page) {
+    console.log('[BrowserAutomation] Checking for verification code request...');
+
+    try {
+        // Various selectors that OpenTable might use for verification code input
+        const verificationSelectors = [
+            'input[name="code"]',
+            'input[placeholder*="code" i]',
+            'input[placeholder*="verification" i]',
+            'input[data-test*="code" i]',
+            'input[data-test*="verification" i]',
+            'input[type="tel"][maxlength="6"]',
+            'input[type="tel"][maxlength="4"]',
+            'input[aria-label*="code" i]',
+            'input[aria-label*="verification" i]',
+            '[data-test="otp-input"]',
+            '.verification-code-input',
+            'input[name="otp"]'
+        ];
+
+        // Also check for text indicating verification is needed
+        const verificationTextSelectors = [
+            'text=Enter the code',
+            'text=verification code',
+            'text=Verify your phone',
+            'text=We sent you a code',
+            'text=Enter code',
+            'text=SMS code'
+        ];
+
+        // Check for input fields
+        for (const selector of verificationSelectors) {
+            const element = await page.$(selector);
+            if (element) {
+                const isVisible = await element.isVisible();
+                if (isVisible) {
+                    console.log(`[BrowserAutomation] Found verification input: ${selector}`);
+                    return true;
+                }
+            }
+        }
+
+        // Check for verification text
+        for (const selector of verificationTextSelectors) {
+            const element = await page.$(selector);
+            if (element) {
+                const isVisible = await element.isVisible();
+                if (isVisible) {
+                    console.log(`[BrowserAutomation] Found verification text: ${selector}`);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    } catch (error) {
+        console.log('[BrowserAutomation] Error checking for verification:', error.message);
+        return false;
+    }
+}
+
 // =============================================================================
 // MAIN RESERVATION FLOW
 // =============================================================================
@@ -445,6 +511,30 @@ async function executeReservation(reservationDetails, guestDetails = null) {
 
         console.log('[BrowserAutomation] Reservation flow completed');
 
+        // Check if verification code is needed
+        const needsVerification = await checkForVerificationCode(page);
+
+        if (needsVerification) {
+            console.log('[BrowserAutomation] ⚠️ Verification code required - keeping browser open!');
+            console.log('[BrowserAutomation] Please enter the code sent to your phone.');
+
+            // Capture screenshot showing verification page
+            const verificationScreenshot = await captureScreenshot(page, `verification_${Date.now()}.png`);
+
+            return {
+                success: true,
+                status: 'verification_needed',
+                needsVerification: true,
+                browserOpen: true, // Browser stays open!
+                url: getCurrentUrl(page),
+                screenshot: verificationScreenshot,
+                message: `📱 Verification code required! The browser is staying open. Please check your phone for the SMS code from OpenTable and enter it in the browser. Once verified, your reservation will be confirmed.`,
+                // Store context reference so we can close it later if needed
+                _context: context,
+                _page: page
+            };
+        }
+
         // Determine status based on what was accomplished
         let status, message;
         if (confirmationSuccess) {
@@ -458,6 +548,9 @@ async function executeReservation(reservationDetails, guestDetails = null) {
             message = `Navigated to reservation page for ${restaurant}. Complete your booking using the link below.`;
         }
 
+        // Close context since no verification needed
+        await context.close();
+
         return {
             success: true,
             status: status,
@@ -465,7 +558,8 @@ async function executeReservation(reservationDetails, guestDetails = null) {
             guestDetailsFilled: guestDetailsFilled,
             url: currentUrl,
             screenshot: screenshotPath,
-            message: message
+            message: message,
+            browserOpen: false
         };
 
     } catch (error) {
@@ -473,17 +567,19 @@ async function executeReservation(reservationDetails, guestDetails = null) {
 
         // Capture error state screenshot
         const errorScreenshot = await captureScreenshot(page, `error_${Date.now()}.png`);
+        const errorUrl = getCurrentUrl(page);
+
+        // Close context on error
+        await context.close();
 
         return {
             success: false,
             status: 'failed',
             error: error.message,
             screenshot: errorScreenshot,
-            url: getCurrentUrl(page)
+            url: errorUrl,
+            browserOpen: false
         };
-
-    } finally {
-        await context.close();
     }
 }
 
@@ -503,6 +599,7 @@ export {
     fillGuestDetails,
     confirmReservation,
     captureScreenshot,
+    checkForVerificationCode,
 
     // Browser management
     getBrowser,

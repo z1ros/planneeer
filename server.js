@@ -705,12 +705,17 @@ app.post('/api/reservations/auto-book', async (req, res) => {
         const guestDetails = phone ? { phone } : null;
         const result = await executeAutoReservation(message, guestDetails);
 
-        // Clean up browser after reservation
-        await closeBrowser();
+        // Only close browser if NOT waiting for verification
+        if (!result.browserOpen) {
+            await closeBrowser();
+        } else {
+            console.log('[AutoReservation] Browser staying open for verification code entry');
+        }
 
         res.json(result);
     } catch (error) {
         console.error('[AutoReservation] Error:', error.message);
+        await closeBrowser(); // Clean up on error
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to make reservation'
@@ -2158,25 +2163,29 @@ app.post('/api/search', async (req, res) => {
         // Build aggregation pipelines
         const buildRestaurantPipeline = () => {
             const pipeline = [
-                { $vectorSearch: {
-                    index: 'restaurant_vector_index',
-                    path: 'embedding',
-                    queryVector: queryEmbedding,
-                    numCandidates: 200,
-                    limit: useStrictFilter ? 100 : limit
-                }},
+                {
+                    $vectorSearch: {
+                        index: 'restaurant_vector_index',
+                        path: 'embedding',
+                        queryVector: queryEmbedding,
+                        numCandidates: 200,
+                        limit: useStrictFilter ? 100 : limit
+                    }
+                },
                 { $addFields: { score: { $meta: 'vectorSearchScore' } } }
             ];
             // Only add category filter for known cuisine keywords
             if (useStrictFilter && hasCuisineKeyword) {
-                pipeline.push({ $match: {
-                    $or: [
-                        { cuisine: categoryRegex },
-                        { categories: categoryRegex }
-                    ]
-                }});
+                pipeline.push({
+                    $match: {
+                        $or: [
+                            { cuisine: categoryRegex },
+                            { categories: categoryRegex }
+                        ]
+                    }
+                });
             }
-            pipeline.push({ $match: { 'location.coordinates': { $exists: true } }});
+            pipeline.push({ $match: { 'location.coordinates': { $exists: true } } });
             pipeline.push({ $limit: limit });
             pipeline.push({ $project: { embedding: 0 } });
             return pipeline;
@@ -2185,23 +2194,27 @@ app.post('/api/search', async (req, res) => {
         const buildEventPipeline = () => {
             // Use TEXT SEARCH for events - search in title, description, and categories
             const pipeline = [
-                { $match: {
-                    $or: [
-                        { title: { $regex: categoryRegex } },
-                        { name: { $regex: categoryRegex } },
-                        { description: { $regex: categoryRegex } },
-                        { categories: { $regex: categoryRegex } },  // Works for both array and string
-                        { categories: { $in: queryWords } }  // Exact match in array
-                    ]
-                }},
+                {
+                    $match: {
+                        $or: [
+                            { title: { $regex: categoryRegex } },
+                            { name: { $regex: categoryRegex } },
+                            { description: { $regex: categoryRegex } },
+                            { categories: { $regex: categoryRegex } },  // Works for both array and string
+                            { categories: { $in: queryWords } }  // Exact match in array
+                        ]
+                    }
+                },
                 // Events use venue.lat/lng
-                { $match: {
-                    $or: [
-                        { 'venue.lat': { $exists: true, $ne: null } },
-                        { 'venue.latitude': { $exists: true, $ne: null } },
-                        { 'location.coordinates': { $exists: true } }
-                    ]
-                }},
+                {
+                    $match: {
+                        $or: [
+                            { 'venue.lat': { $exists: true, $ne: null } },
+                            { 'venue.latitude': { $exists: true, $ne: null } },
+                            { 'location.coordinates': { $exists: true } }
+                        ]
+                    }
+                },
                 { $addFields: { score: 0.8 } },  // Give events a score for sorting
                 { $limit: limit },
                 { $project: { embedding: 0 } }
@@ -2212,15 +2225,17 @@ app.post('/api/search', async (req, res) => {
         const buildLandmarkPipeline = () => {
             // Simple vector search for landmarks
             const pipeline = [
-                { $vectorSearch: {
-                    index: 'landmark_vector_index',
-                    path: 'embedding',
-                    queryVector: queryEmbedding,
-                    numCandidates: 200,
-                    limit: limit
-                }},
+                {
+                    $vectorSearch: {
+                        index: 'landmark_vector_index',
+                        path: 'embedding',
+                        queryVector: queryEmbedding,
+                        numCandidates: 200,
+                        limit: limit
+                    }
+                },
                 { $addFields: { score: { $meta: 'vectorSearchScore' } } },
-                { $match: { 'location.coordinates': { $exists: true } }},
+                { $match: { 'location.coordinates': { $exists: true } } },
                 { $project: { embedding: 0 } }
             ];
             return pipeline;
@@ -2308,18 +2323,18 @@ app.post('/api/search', async (req, res) => {
                 .filter(l => l.location?.coordinates)
                 .map(l => ({
                     type: 'Feature',
-                geometry: {
-                    type: 'Point',
-                    coordinates: l.location.coordinates
-                },
-                properties: {
-                    id: l._id.toString(),
-                    name: l.name,
-                    type: 'landmark',
-                    category: l.category || '',
-                    description: l.vibe_metadata?.description || ''
-                }
-            }))
+                    geometry: {
+                        type: 'Point',
+                        coordinates: l.location.coordinates
+                    },
+                    properties: {
+                        id: l._id.toString(),
+                        name: l.name,
+                        type: 'landmark',
+                        category: l.category || '',
+                        description: l.vibe_metadata?.description || ''
+                    }
+                }))
         ];
 
         res.json({
@@ -2726,12 +2741,12 @@ Only return the JSON array, nothing else. Include 3-6 items max.`;
 
         const parseData = await parseResponse.json();
         let parseText = parseData.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        
+
         // Clean up JSON
         if (parseText.includes('```')) {
             parseText = parseText.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
         }
-        
+
         let searchItems;
         try {
             searchItems = JSON.parse(parseText);
@@ -2744,20 +2759,22 @@ Only return the JSON array, nothing else. Include 3-6 items max.`;
 
         // Step 2: Search for each item in the database
         const foundItems = [];
-        
+
         for (const searchItem of searchItems) {
             const queryEmbedding = await getQueryEmbedding(searchItem.searchQuery);
             let results = [];
 
             if (searchItem.type === 'restaurant' && queryEmbedding) {
                 results = await nycRestaurantsCollection.aggregate([
-                    { $vectorSearch: { 
-                        index: 'restaurant_vector_index', 
-                        path: 'embedding', 
-                        queryVector: queryEmbedding, 
-                        numCandidates: 50, 
-                        limit: 3 
-                    }},
+                    {
+                        $vectorSearch: {
+                            index: 'restaurant_vector_index',
+                            path: 'embedding',
+                            queryVector: queryEmbedding,
+                            numCandidates: 50,
+                            limit: 3
+                        }
+                    },
                     { $addFields: { score: { $meta: 'vectorSearchScore' } } },
                     { $match: { 'location.coordinates': { $exists: true } } },
                     { $project: { embedding: 0 } }
@@ -2804,13 +2821,15 @@ Only return the JSON array, nothing else. Include 3-6 items max.`;
                 }));
             } else if (searchItem.type === 'landmark' && queryEmbedding) {
                 results = await nycLandmarksCollection.aggregate([
-                    { $vectorSearch: { 
-                        index: 'landmark_vector_index', 
-                        path: 'embedding', 
-                        queryVector: queryEmbedding, 
-                        numCandidates: 50, 
-                        limit: 3 
-                    }},
+                    {
+                        $vectorSearch: {
+                            index: 'landmark_vector_index',
+                            path: 'embedding',
+                            queryVector: queryEmbedding,
+                            numCandidates: 50,
+                            limit: 3
+                        }
+                    },
                     { $addFields: { score: { $meta: 'vectorSearchScore' } } },
                     { $match: { 'location.coordinates': { $exists: true } } },
                     { $project: { embedding: 0 } }
@@ -2849,7 +2868,7 @@ Only return the JSON array, nothing else. Include 3-6 items max.`;
 
         // Step 3: Build detailed itinerary using the existing endpoint logic
         // (Reusing the build-detailed logic inline)
-        
+
         // Find nearest subway station for each location
         const findNearestStation = (lat, lng) => {
             let nearest = null;
@@ -2893,7 +2912,7 @@ Only return the JSON array, nothing else. Include 3-6 items max.`;
 
         // Build itinerary descriptions
         const itemDescriptions = enrichedItems.map((item, i) => {
-            const stationInfo = item.nearestStation 
+            const stationInfo = item.nearestStation
                 ? `Nearest subway: ${item.nearestStation.name} (${item.nearestStation.lines.join('/')}) - ${item.nearestStation.walkingMinutes} min walk`
                 : 'No subway nearby';
             return `${i + 1}. ${item.name} (${item.type})
@@ -2975,7 +2994,7 @@ Generate JSON:
 
         const buildData = await buildResponse.json();
         let itineraryText = buildData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        
+
         if (itineraryText.includes('```')) {
             itineraryText = itineraryText.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
         }
@@ -2990,7 +3009,7 @@ Generate JSON:
 
         // Enrich stops with coordinates
         const normalizeForMatch = (str) => (str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\b(the|a|an|at|in|on|of|and|for|to)\b/g, '').trim();
-        
+
         itinerary.stops = itinerary.stops.map((stop, index) => {
             const normalizedStop = normalizeForMatch(stop.name);
             const originalItem = enrichedItems.find(item => {
@@ -3065,7 +3084,7 @@ app.post('/api/plan/build-detailed', async (req, res) => {
         const findNearestStation = (lat, lng) => {
             let nearest = null;
             let minDist = Infinity;
-            
+
             for (const [stopId, stop] of Object.entries(NYC_STOPS)) {
                 const dist = Math.sqrt(Math.pow(stop.lat - lat, 2) + Math.pow(stop.lng - lng, 2));
                 if (dist < minDist) {
@@ -3073,7 +3092,7 @@ app.post('/api/plan/build-detailed', async (req, res) => {
                     nearest = { ...stop, id: stopId };
                 }
             }
-            
+
             // Calculate walking time (roughly 3 mph = 0.05 miles per minute)
             const walkingMinutes = Math.round(minDist * 69 * 20); // rough estimate
             return { station: nearest, walkingMinutes: Math.min(walkingMinutes, 15) };
@@ -3111,10 +3130,10 @@ app.post('/api/plan/build-detailed', async (req, res) => {
         const enrichedItems = items.map(item => {
             const coords = item.coordinates || { lat: item.lat, lng: item.lng };
             if (!coords.lat || !coords.lng) return { ...item, nearestStation: null };
-            
+
             const { station, walkingMinutes } = findNearestStation(coords.lat, coords.lng);
             const lines = getSubwayLines(station?.id);
-            
+
             return {
                 ...item,
                 coordinates: coords,
@@ -3129,7 +3148,7 @@ app.post('/api/plan/build-detailed', async (req, res) => {
 
         // Build prompt for Gemini
         const itemDescriptions = enrichedItems.map((item, i) => {
-            const stationInfo = item.nearestStation 
+            const stationInfo = item.nearestStation
                 ? `Nearest subway: ${item.nearestStation.name} (${item.nearestStation.lines.join('/')}) - ${item.nearestStation.walkingMinutes} min walk`
                 : 'No subway nearby';
             return `${i + 1}. ${item.name} (${item.type || 'place'})
@@ -3214,8 +3233,8 @@ FINAL CHECKS:
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { 
-                    temperature: 0.7, 
+                generationConfig: {
+                    temperature: 0.7,
                     maxOutputTokens: 4000,
                     responseMimeType: 'application/json'
                 }
@@ -3254,57 +3273,57 @@ FINAL CHECKS:
                 .replace(/\s+/g, ' ')
                 .trim();
         };
-        
+
         const findBestMatch = (stopName) => {
             const normalizedStop = normalizeForMatch(stopName);
             const stopWords = normalizedStop.split(' ').filter(w => w.length > 2);
-            
+
             let bestMatch = null;
             let bestScore = 0;
-            
+
             for (const item of enrichedItems) {
                 const normalizedItem = normalizeForMatch(item.name);
                 const itemWords = normalizedItem.split(' ').filter(w => w.length > 2);
-                
+
                 // Check direct inclusion
                 if (normalizedItem.includes(normalizedStop) || normalizedStop.includes(normalizedItem)) {
                     return item;
                 }
-                
+
                 // Count matching words
-                const matchingWords = stopWords.filter(sw => 
+                const matchingWords = stopWords.filter(sw =>
                     itemWords.some(iw => iw.includes(sw) || sw.includes(iw))
                 );
                 const score = matchingWords.length / Math.max(stopWords.length, 1);
-                
+
                 if (score > bestScore && score >= 0.5) {  // At least 50% word match
                     bestScore = score;
                     bestMatch = item;
                 }
             }
-            
+
             return bestMatch;
         };
-        
+
         itinerary.stops = itinerary.stops.map((stop, index) => {
             const originalItem = findBestMatch(stop.name);
-            
+
             if (originalItem) {
                 console.log(`[Detailed Planner] Matched "${stop.name}" -> "${originalItem.name}"`);
             } else {
                 console.log(`[Detailed Planner] No match found for "${stop.name}"`);
             }
-            
+
             return {
                 ...stop,
                 id: originalItem?.id || `stop-${stop.order || index + 1}`,
                 coordinates: originalItem?.coordinates || null,
                 nearestStation: originalItem?.nearestStation || null,
-                icon: stop.type === 'food' ? 'fa-utensils' : 
-                      stop.type === 'event' ? 'fa-calendar' : 
-                      stop.type === 'landmark' ? 'fa-landmark' : 'fa-location-dot',
-                iconBg: stop.type === 'food' ? '#ec4899' : 
-                        stop.type === 'event' ? '#8b5cf6' : 
+                icon: stop.type === 'food' ? 'fa-utensils' :
+                    stop.type === 'event' ? 'fa-calendar' :
+                        stop.type === 'landmark' ? 'fa-landmark' : 'fa-location-dot',
+                iconBg: stop.type === 'food' ? '#ec4899' :
+                    stop.type === 'event' ? '#8b5cf6' :
                         stop.type === 'landmark' ? '#ef4444' : '#3b82f6'
             };
         });
@@ -3320,7 +3339,7 @@ FINAL CHECKS:
             if (!costStr) return 0;
             const str = costStr.toString().toLowerCase();
             if (str === 'free' || str === 'tbd' || str === '$0') return 0;
-            
+
             // Handle single values like "$25" first (preferred)
             const singleMatch = str.match(/\$?(\d+(?:\.\d{2})?)/);
             if (singleMatch) {
@@ -3440,21 +3459,21 @@ app.post('/api/chat/speak', async (req, res) => {
         if (isDirectionsQuery && destination) {
             // Search for the destination
             const queryEmbedding = await getQueryEmbedding(destination);
-            
+
             if (queryEmbedding) {
                 // Search landmarks first
                 const landmarks = await nycLandmarksCollection.aggregate([
-                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 }},
-                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
-                    { $match: { 'location.coordinates': { $exists: true } }},
+                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
+                    { $match: { 'location.coordinates': { $exists: true } } },
                     { $project: { embedding: 0 } }
                 ]).toArray().catch(() => []);
 
                 // Also search restaurants
                 const restaurants = await nycRestaurantsCollection.aggregate([
-                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 }},
-                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
-                    { $match: { 'location.coordinates': { $exists: true } }},
+                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 50, limit: 3 } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
+                    { $match: { 'location.coordinates': { $exists: true } } },
                     { $project: { embedding: 0 } }
                 ]).toArray().catch(() => []);
 
@@ -3486,24 +3505,24 @@ Keep it natural and friendly, as if speaking to a friend. Keep it under 100 word
         } else if (isSuggestionQuery) {
             // Search for relevant places based on the query
             const queryEmbedding = await getQueryEmbedding(query);
-            
+
             if (queryEmbedding) {
                 const landmarks = await nycLandmarksCollection.aggregate([
-                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 }},
-                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $vectorSearch: { index: 'landmark_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
                     { $project: { embedding: 0 } }
                 ]).toArray().catch(() => []);
 
                 const restaurants = await nycRestaurantsCollection.aggregate([
-                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 }},
-                    { $addFields: { score: { $meta: 'vectorSearchScore' } }},
+                    { $vectorSearch: { index: 'restaurant_vector_index', path: 'embedding', queryVector: queryEmbedding, numCandidates: 100, limit: 5 } },
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
                     { $project: { embedding: 0 } }
                 ]).toArray().catch(() => []);
 
                 searchResults = [...landmarks, ...restaurants];
             }
 
-            const placesList = searchResults.slice(0, 5).map(p => 
+            const placesList = searchResults.slice(0, 5).map(p =>
                 `- ${p.name}: ${p.vibe_metadata?.description || p.description || 'A great NYC spot'}`
             ).join('\n');
 
@@ -3539,7 +3558,7 @@ Keep it natural and friendly. Keep it under 100 words.`;
         }
 
         const geminiData = await geminiResponse.json();
-        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 
+        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ||
             "I'd love to help you explore NYC! Could you tell me more about what you're looking for?";
 
         console.log('[Chat] Response:', responseText.substring(0, 100) + '...');
@@ -3561,7 +3580,7 @@ Keep it natural and friendly. Keep it under 100 words.`;
 function findNearestStationForChat(lat, lng) {
     let nearest = null;
     let minDist = Infinity;
-    
+
     for (const [stopId, stop] of Object.entries(NYC_STOPS)) {
         const dist = Math.sqrt(Math.pow(stop.lat - lat, 2) + Math.pow(stop.lng - lng, 2));
         if (dist < minDist) {
@@ -3569,9 +3588,9 @@ function findNearestStationForChat(lat, lng) {
             nearest = { ...stop, id: stopId };
         }
     }
-    
+
     if (!nearest) return null;
-    
+
     const walkingMinutes = Math.round(minDist * 69 * 20);
     const prefix = nearest.id.charAt(0);
     const lineMap = {
@@ -3580,7 +3599,7 @@ function findNearestStationForChat(lat, lng) {
         '6': ['J', 'Z'], '7': ['G'], 'A': ['A', 'C', 'E'],
         'L': ['L'], 'N': ['N', 'Q', 'R', 'W'], 'S': ['S']
     };
-    
+
     return {
         name: nearest.name,
         lines: lineMap[prefix] || ['1', '2', '3'],

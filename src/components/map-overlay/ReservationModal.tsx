@@ -13,12 +13,36 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
     const [isLoading, setIsLoading] = useState(false);
 
     // Update message when initialMessage changes (from itinerary item)
+    // Also extract phone number if present in the message
     useEffect(() => {
         if (initialMessage) {
             setMessage(initialMessage);
+
+            // Try to extract phone number from the message
+            // Match patterns like: 504-427-3839, (504) 427-3839, 5044273839, 504.427.3839
+            const phonePatterns = [
+                /\b(\d{3}[-.]?\d{3}[-.]?\d{4})\b/,  // 504-427-3839, 504.427.3839, 5044273839
+                /\((\d{3})\)\s*\d{3}[-.]?\d{4}/,   // (504) 427-3839
+                /\b(\d{3})\s+(\d{3})\s+(\d{4})\b/, // 504 427 3839
+            ];
+
+            for (const pattern of phonePatterns) {
+                const match = initialMessage.match(pattern);
+                if (match) {
+                    // Extract just the digits for the phone number
+                    const extractedPhone = match[0].replace(/[^\d]/g, '');
+                    if (extractedPhone.length === 10) {
+                        // Format as XXX-XXX-XXXX
+                        const formattedPhone = `${extractedPhone.slice(0, 3)}-${extractedPhone.slice(3, 6)}-${extractedPhone.slice(6)}`;
+                        setPhone(formattedPhone);
+                        console.log('[ReservationModal] Extracted phone:', formattedPhone);
+                        break;
+                    }
+                }
+            }
         }
     }, [initialMessage, isOpen]);
-    
+
     const [result, setResult] = useState<{
         success: boolean;
         message: string;
@@ -73,21 +97,21 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                     />
 
                     {/* Modal */}
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        transition={{ 
+                        transition={{
                             type: "spring",
                             stiffness: 300,
                             damping: 30,
-                            duration: 0.3 
+                            duration: 0.3
                         }}
                         className="relative w-[420px] bg-gradient-to-b from-slate-800/95 to-slate-900/98 backdrop-blur-xl rounded-2xl border border-white/15 p-6 shadow-[0_8px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] pointer-events-auto"
                     >
                         {/* Header */}
                         <div className="flex items-center justify-between mb-5">
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: 0.1, duration: 0.3 }}
@@ -125,7 +149,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                     transition={{ duration: 0.2 }}
                                 >
                                     {/* Message Input */}
-                                    <motion.div 
+                                    <motion.div
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: 0.15, duration: 0.3 }}
@@ -142,7 +166,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                     </motion.div>
 
                                     {/* Phone Input */}
-                                    <motion.div 
+                                    <motion.div
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: 0.2, duration: 0.3 }}
@@ -175,7 +199,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                     >
                                         {isLoading ? (
                                             <>
-                                                <motion.i 
+                                                <motion.i
                                                     animate={{ rotate: 360 }}
                                                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                                                     className="fa-solid fa-spinner"
@@ -191,7 +215,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                     </motion.button>
 
                                     {/* Info */}
-                                    <motion.p 
+                                    <motion.p
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
                                         transition={{ delay: 0.3, duration: 0.3 }}
@@ -202,7 +226,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                 </motion.div>
                             ) : (
                                 /* Result Display */
-                                <motion.div 
+                                <motion.div
                                     key="result"
                                     initial={{ opacity: 0, x: 20 }}
                                     animate={{ opacity: 1, x: 0 }}
@@ -210,18 +234,18 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                     transition={{ duration: 0.3 }}
                                     className="text-center"
                                 >
-                                    <motion.div 
+                                    <motion.div
                                         initial={{ scale: 0 }}
                                         animate={{ scale: 1 }}
-                                        transition={{ 
-                                            type: "spring", 
-                                            stiffness: 400, 
+                                        transition={{
+                                            type: "spring",
+                                            stiffness: 400,
                                             damping: 15,
-                                            delay: 0.1 
+                                            delay: 0.1
                                         }}
                                         className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${result.success ? 'bg-green-500/20' : 'bg-red-500/20'}`}
                                     >
-                                        <motion.i 
+                                        <motion.i
                                             initial={{ scale: 0 }}
                                             animate={{ scale: 1 }}
                                             transition={{ delay: 0.3, type: "spring", stiffness: 500 }}
@@ -229,7 +253,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                         ></motion.i>
                                     </motion.div>
 
-                                    <motion.h3 
+                                    <motion.h3
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: 0.2 }}
@@ -238,7 +262,7 @@ export default function ReservationModal({ isOpen, onClose, initialMessage = '' 
                                         {result.success ? 'Reservation Submitted!' : 'Reservation Failed'}
                                     </motion.h3>
 
-                                    <motion.p 
+                                    <motion.p
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
                                         transition={{ delay: 0.3 }}
