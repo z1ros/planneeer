@@ -156,11 +156,14 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
   const [systemStress, setSystemStress] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showPlaces, setShowPlaces] = useState(false);
-  const [showTransitLayers, setShowTransitLayers] = useState(true);
-  const [showEvents, setShowEvents] = useState(false);
-  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [activeLayer, setActiveLayer] = useState<'transit' | 'restaurants' | 'events' | 'landmarks' | null>(null);
   const [is3DMode, setIs3DMode] = useState(true);
+  
+  // Derived state from activeLayer for compatibility
+  const showPlaces = activeLayer === 'restaurants';
+  const showTransitLayers = activeLayer === 'transit';
+  const showEvents = activeLayer === 'events';
+  const showLandmarks = activeLayer === 'landmarks';
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [selectedItineraryDay, setSelectedItineraryDay] = useState(0);
   const [showItinerary, setShowItinerary] = useState(false);
@@ -2783,8 +2786,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       {/* Layer Toggle Controls */}
       <div className="layer-toggle-controls">
         <button
-          className={`layer-toggle-btn ${showTransitLayers ? 'active' : ''}`}
-          onClick={() => setShowTransitLayers(!showTransitLayers)}
+          className={`layer-toggle-btn ${activeLayer === 'transit' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'transit' ? null : 'transit')}
           title="Toggle Transit"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2795,8 +2798,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showPlaces ? 'active' : ''}`}
-          onClick={() => setShowPlaces(!showPlaces)}
+          className={`layer-toggle-btn ${activeLayer === 'restaurants' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'restaurants' ? null : 'restaurants')}
           title="Toggle Restaurants"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2806,8 +2809,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showEvents ? 'active' : ''}`}
-          onClick={() => setShowEvents(!showEvents)}
+          className={`layer-toggle-btn ${activeLayer === 'events' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'events' ? null : 'events')}
           title="Toggle Events"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2820,8 +2823,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         </button>
 
         <button
-          className={`layer-toggle-btn ${showLandmarks ? 'active' : ''}`}
-          onClick={() => setShowLandmarks(!showLandmarks)}
+          className={`layer-toggle-btn ${activeLayer === 'landmarks' ? 'active' : ''}`}
+          onClick={() => setActiveLayer(activeLayer === 'landmarks' ? null : 'landmarks')}
           title="Toggle Landmarks"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Map3D from './components/Map3D';
 import MapErrorBoundary from './components/MapErrorBoundary';
-import MapOverlayUI from './components/map-overlay/MapOverlayUI';
+import { LeftSidebar, RightItineraryPanel, BottomSearchBar, ItineraryItem, BudgetData } from './components/map-overlay';
 import WelcomeScreen from './components/WelcomeScreen';
 import { ItineraryEvent } from './types';
-import { ItineraryItem, BudgetData } from './components/map-overlay';
 import './App.css';
 import './styles/industrial.css';
 
@@ -61,8 +61,106 @@ function eventToOverlayItem(event: ItineraryEvent, index: number): ItineraryItem
   };
 }
 
-function App() {
-  const [showWelcome, setShowWelcome] = useState(false); // Disabled for testing new UI
+// Main Layout - LeftSidebar is always present
+function MainLayout() {
+  return (
+    <div className="app-fullscreen relative">
+      {/* Main Content Area - Changes based on route */}
+      <Outlet />
+      
+      {/* Left Sidebar - Always visible, on top with z-index */}
+      <div className="absolute inset-0 pointer-events-none z-50">
+        <LeftSidebar />
+      </div>
+    </div>
+  );
+}
+
+// Placeholder pages for routes
+function JourneyPage() {
+  return (
+    <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
+      <div className="text-center text-white">
+        <i className="fa-solid fa-route text-6xl text-orange-500 mb-4"></i>
+        <h1 className="text-3xl font-bold mb-2">Journey Planner</h1>
+        <p className="text-white/60">Plan your perfect trip itinerary</p>
+      </div>
+    </div>
+  );
+}
+
+function NetworkPage() {
+  return (
+    <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
+      <div className="text-center text-white">
+        <i className="fa-solid fa-users text-6xl text-orange-500 mb-4"></i>
+        <h1 className="text-3xl font-bold mb-2">Social Network</h1>
+        <p className="text-white/60">Connect with fellow travelers</p>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage() {
+  return (
+    <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
+      <div className="text-center text-white">
+        <i className="fa-solid fa-gear text-6xl text-orange-500 mb-4"></i>
+        <h1 className="text-3xl font-bold mb-2">Settings</h1>
+        <p className="text-white/60">Customize your experience</p>
+      </div>
+    </div>
+  );
+}
+
+// Default itinerary items
+const defaultItems: ItineraryItem[] = [
+  { 
+    id: '1', 
+    type: 'transit', 
+    name: 'Subway', 
+    duration: '30 min', 
+    price: '2.25$', 
+    icon: 'fa-train-subway', 
+    iconBg: '#3b82f6',
+    address: '34th St - Penn Station, New York, NY',
+    description: 'Take the downtown A/C/E train towards World Trade Center.',
+    tags: ['Express', 'A/C/E Lines']
+  },
+  { 
+    id: '2', 
+    type: 'food', 
+    name: 'Jose Pizza', 
+    priceRange: 'Avg prices: 7-12$', 
+    icon: 'fa-pizza-slice', 
+    iconBg: '#ec4899',
+    address: '7 Carmine St, New York, NY 10014',
+    rating: 4.5,
+    reviewCount: 2847,
+    description: 'Legendary NYC pizza spot since 1975.',
+    tags: ['Cash Only', 'Quick Bite', 'Local Favorite']
+  },
+  { 
+    id: '3', 
+    type: 'rideshare', 
+    name: 'Uber', 
+    duration: '10 min', 
+    price: '12$', 
+    icon: 'fa-car', 
+    iconBg: '#f97316',
+    description: 'UberX available nearby. Estimated arrival in 3 minutes.',
+    tags: ['UberX', 'No Surge']
+  },
+];
+
+const defaultBudget: BudgetData = {
+  food: 0,
+  activity: 0,
+  transit: 0,
+};
+
+function MapPage() {
+  const [showWelcome, setShowWelcome] = useState(false);
   const [voiceOnboardingActive, setVoiceOnboardingActive] = useState(false);
 
   const [settings] = useState<CitySettings>({
@@ -83,30 +181,20 @@ function App() {
     name: string;
   } | null>(null);
 
-  // Itinerary State
   const [itineraryEvents, setItineraryEvents] = useState<ItineraryEvent[]>([]);
   
-  // Budget state
-  const [budget] = useState<BudgetData>({
-    food: 0,
-    activity: 0,
-    transit: 0,
-  });
+  const [budget] = useState<BudgetData>(defaultBudget);
 
-  // Map control state for voice commands
   const [mapCommand, setMapCommand] = useState<{
     action: 'zoom_in' | 'zoom_out' | 'fly_to';
     location?: string;
     timestamp: number;
   } | null>(null);
 
-  // Itinerary route data for map visualization
   const [itineraryRouteData, setItineraryRouteData] = useState<any>(null);
 
   const handleDisplayStart = useCallback((mode: 'voice' | 'chat') => {
     setShowWelcome(false);
-
-    // If voice mode, activate voice onboarding  
     if (mode === 'voice') {
       setVoiceOnboardingActive(true);
     }
@@ -114,7 +202,6 @@ function App() {
 
   const handleSearch = useCallback((query: string) => {
     console.log('[App] Search query:', query);
-    // TODO: Implement search functionality
   }, []);
 
   const handleVoiceClick = useCallback(() => {
@@ -122,20 +209,13 @@ function App() {
     setVoiceOnboardingActive(true);
   }, []);
 
-  const handleNavClick = useCallback((nav: 'places' | 'landmarks' | 'settings') => {
-    console.log('[App] Nav clicked:', nav);
-    // TODO: Implement nav switching
-  }, []);
-
   const handleItemClick = useCallback((item: ItineraryItem) => {
     console.log('[App] Item clicked:', item);
-    // TODO: Fly to item on map
   }, []);
 
-  // Convert itinerary events to overlay items
-  const overlayItems: ItineraryItem[] = itineraryEvents.map(eventToOverlayItem);
-
-  // Calculate total budget
+  const overlayItems: ItineraryItem[] = itineraryEvents.length > 0 
+    ? itineraryEvents.map(eventToOverlayItem) 
+    : defaultItems;
   const totalBudget = budget.food + budget.activity + budget.transit;
 
   if (showWelcome) {
@@ -143,8 +223,8 @@ function App() {
   }
 
   return (
-    <div className="app-fullscreen">
-      {/* Full-screen 3D Map */}
+    <>
+      {/* Map Background */}
       <MapErrorBoundary>
         <Map3D
           settings={settings}
@@ -154,17 +234,34 @@ function App() {
         />
       </MapErrorBoundary>
 
-      {/* Overlay UI */}
-      <MapOverlayUI
-        onSearch={handleSearch}
-        onVoiceClick={handleVoiceClick}
-        onNavClick={handleNavClick}
-        onItemClick={handleItemClick}
-        itineraryItems={overlayItems.length > 0 ? overlayItems : undefined}
-        budget={budget}
-        totalBudget={totalBudget > 0 ? totalBudget : undefined}
-      />
-    </div>
+      {/* Right Panel & Bottom Search - Map specific UI */}
+      <div className="absolute inset-0 pointer-events-none z-10">
+        <RightItineraryPanel 
+          items={overlayItems}
+          budget={budget}
+          totalBudget={totalBudget > 0 ? totalBudget : 42.75}
+          onItemClick={handleItemClick}
+        />
+        <BottomSearchBar 
+          onSearch={handleSearch}
+          onVoiceClick={handleVoiceClick}
+        />
+      </div>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/map" replace />} />
+      <Route element={<MainLayout />}>
+        <Route path="/map" element={<MapPage />} />
+        <Route path="/journey" element={<JourneyPage />} />
+        <Route path="/network" element={<NetworkPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Route>
+    </Routes>
   );
 }
 
