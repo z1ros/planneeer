@@ -856,11 +856,12 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 }
               }
 
-              // Start waving animation after model loads (no speech - browser blocks auto-play)
-              // Speech will happen when user clicks on the model
+              // Start waving animation and welcome speech after model loads
               setTimeout(() => {
-                startWave(); // Start waving animation only
-              }, 1000);
+                startWave(); // Start waving animation
+                // Brief welcome speech introducing the app
+                speak("Hi! Welcome to What's Up New York! I'm your AI guide. How can I help you explore the city today?");
+              }, 1500); // Slight delay for smoother experience
             },
             (progress) => {
               console.log('[Guide3D] Loading:', ((progress.loaded / (progress.total || 1)) * 100).toFixed(0) + '%');
