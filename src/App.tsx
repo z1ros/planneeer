@@ -1683,18 +1683,6 @@ function MapPage() {
           initialMessage={reservationMessage}
         />
 
-        {/* Create Plan Button Overlay - Only visible when search results exist but no plan yet */}
-        {searchResults && !plans && !isSearching && (
-          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-auto">
-            <button
-              onClick={generateItinerary}
-              className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold py-4 px-10 rounded-full shadow-[0_8px_32px_rgba(249,115,22,0.4)] flex items-center gap-3 transition-all transform hover:scale-105 active:scale-95 border border-white/20 backdrop-blur-md group"
-            >
-              <i className="fa-solid fa-wand-magic-sparkles group-hover:rotate-12 transition-transform"></i>
-              <span>Create Smart Itinerary</span>
-            </button>
-          </div>
-        )}
       </div>
     </>
   );

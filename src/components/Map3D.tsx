@@ -1,6 +1,8 @@
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CitySettings } from '../App';
 // NYC Data
 import nycRoutes from '../data/nycSubwayRoutes.json';
@@ -10,6 +12,7 @@ import { fetchLandmarks, landmarksToGeoJSON } from '../services/landmarksApi';
 import { fetchLineStatuses, LineStatusMap } from '../services/mtaApi';
 import { SearchResponse } from '../services/plannerApi';
 import { fetchNYCRestaurants, nycRestaurantsToGeoJSON } from '../services/restaurantApi';
+import { speak } from '../services/speechService';
 import './Map3D.css';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -414,28 +417,26 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
     });
 
-    mapInstance.on('style.load', () => {
-      // Load the 3D Subway Model
-      mapInstance.addModel('subway-model', './models/subway.glb');
-    });
-
     mapInstance.on('load', async () => {
 
       // ===========================================
-      // INITIAL VIEW - Disabled auto-tour for better UX
+      // INITIAL VIEW - Start at Brooklyn Bridge to see the guide
       // ===========================================
 
-      // Set initial view to show downtown Boston with visible markers
-      // Set initial view to NYC (Times Square)
+      // Brooklyn Bridge location for the 3D guide - center of the bridge pedestrian walkway
+      const BROOKLYN_BRIDGE: [number, number] = [-73.9957, 40.7053];
+      
+      // Set initial view to Brooklyn Bridge to see the 3D guide
+      // WTC is northwest of Brooklyn Bridge, so bearing ~-30 to -60 shows WTC in background
       setTimeout(() => {
-        mapInstance.easeTo({
-          center: NYC_CENTER,
-          zoom: 14,
+        mapInstance.flyTo({
+          center: BROOKLYN_BRIDGE,
+          zoom: 16,
           pitch: 60,
-          bearing: -15,
-          duration: 1500
+          bearing: -45, // Looking northwest toward WTC/Manhattan skyline
+          duration: 2000
         });
-        console.log('[Map] Initial view set to NYC');
+        console.log('[Map] Initial view set to Brooklyn Bridge with 3D Guide (WTC in background)');
       }, 500);
 
       // ===========================================
@@ -647,6 +648,345 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       });
 
       console.log('[Map] NYC train vehicles layer added');
+
+      // ===========================================
+      // 3D GUIDE MODEL AT BROOKLYN BRIDGE (Three.js Custom Layer)
+      // ===========================================
+      
+      // Brooklyn Bridge coordinates - center of the bridge pedestrian walkway
+      const BROOKLYN_BRIDGE_LNG = -73.9957;
+      const BROOKLYN_BRIDGE_LAT = 40.7053;
+      
+      // Model transformation for Mapbox
+      const modelOrigin: [number, number] = [BROOKLYN_BRIDGE_LNG, BROOKLYN_BRIDGE_LAT];
+      const modelAltitude = 0;
+      const modelRotate = [Math.PI / 2, 0, 0]; // Rotate to stand upright
+      
+      const modelAsMercatorCoordinate = mapboxgl.MercatorCoordinate.fromLngLat(
+        modelOrigin,
+        modelAltitude
+      );
+      
+      // Scale factor to make model visible at this location (meters)
+      // A human is ~1.7m tall, scale factor converts to mercator units
+      const modelScale = modelAsMercatorCoordinate.meterInMercatorCoordinateUnits() * 100;
+      
+      const modelTransform = {
+        translateX: modelAsMercatorCoordinate.x,
+        translateY: modelAsMercatorCoordinate.y,
+        translateZ: modelAsMercatorCoordinate.z,
+        rotateX: modelRotate[0],
+        rotateY: modelRotate[1],
+        rotateZ: modelRotate[2],
+        scale: modelScale
+      };
+      
+      // Three.js variables for the custom layer
+      let guideCamera: THREE.Camera;
+      let guideScene: THREE.Scene;
+      let guideRenderer: THREE.WebGLRenderer;
+      let guideMixer: THREE.AnimationMixer | null = null;
+      let guideModel: THREE.Group | null = null;
+      const guideClock = new THREE.Clock();
+      
+      // Custom layer for Three.js 3D model
+      const guideLayer: mapboxgl.CustomLayerInterface = {
+        id: 'guide-3d-layer',
+        type: 'custom',
+        renderingMode: '3d',
+        
+        onAdd: function(_map, gl) {
+          // Create Three.js scene
+          guideScene = new THREE.Scene();
+          guideCamera = new THREE.Camera();
+          
+          // Lighting
+          const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+          guideScene.add(ambientLight);
+          
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+          directionalLight.position.set(0, 70, 100).normalize();
+          guideScene.add(directionalLight);
+          
+          const directionalLight2 = new THREE.DirectionalLight(0xf97316, 1);
+          directionalLight2.position.set(0, -70, 100).normalize();
+          guideScene.add(directionalLight2);
+          
+          // Load 3D model
+          const loader = new GLTFLoader();
+          loader.load(
+            '/woman_walking.glb',
+            (gltf) => {
+              guideModel = gltf.scene;
+              
+              // Log model details for debugging
+              const box = new THREE.Box3().setFromObject(guideModel);
+              const size = box.getSize(new THREE.Vector3());
+              const center = box.getCenter(new THREE.Vector3());
+              console.log('[Guide3D] Model bounding box size:', size.x, size.y, size.z);
+              console.log('[Guide3D] Model center:', center.x, center.y, center.z);
+              
+              // The model is HUGE (~1700 units tall) - scale it down to ~1.5 units (smaller human size)
+              const targetHeight = 1.5; // 1.5 meters tall (smaller)
+              const scaleFactor = targetHeight / size.y;
+              guideModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+              
+              // Recalculate box after scaling
+              const scaledBox = new THREE.Box3().setFromObject(guideModel);
+              const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+              
+              // Center the model at origin and ensure it's on the ground
+              guideModel.position.set(-scaledCenter.x, -scaledBox.min.y, -scaledCenter.z);
+              
+              console.log('[Guide3D] Model scaled by:', scaleFactor);
+              console.log('[Guide3D] Final position:', guideModel.position);
+              
+              // Apply a fallback material to all meshes if textures failed
+              guideModel.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                  const mesh = child as THREE.Mesh;
+                  // Make sure materials are visible
+                  if (mesh.material) {
+                    const mat = mesh.material as THREE.MeshStandardMaterial;
+                    if (!mat.map) {
+                      // No texture, apply a visible color (peachy skin tone)
+                      mat.color = new THREE.Color(0xffaa88);
+                    }
+                    mat.needsUpdate = true;
+                  }
+                }
+              });
+              
+              // Rotate model to face the camera (camera bearing is -45, looking from southeast toward northwest)
+              // Flip the model on X axis to mirror it, then rotate to face camera
+              guideModel.scale.x *= -1; // Mirror the model
+              guideModel.rotation.y = Math.PI * 0.25; // Then rotate 45 degrees to align with camera bearing
+              
+              guideScene.add(guideModel);
+              console.log('[Guide3D] Model loaded successfully');
+              console.log('[Guide3D] Animations:', gltf.animations.map(a => a.name));
+              
+              // Store original position and rotation for animation
+              const originalY = guideModel.position.y;
+              const originalRotationZ = guideModel.rotation.z;
+              const originalRotationY = guideModel.rotation.y;
+              
+              // Create procedural greeting animation (whole body)
+              let animTime = 0;
+              let isGreeting = false;
+              let greetStartTime = 0;
+              const greetDuration = 3.5; // Greeting animation duration
+              
+              // Animation update function
+              const updateWaveAnimation = (delta: number) => {
+                animTime += delta;
+                
+                if (!guideModel) return;
+                
+                if (isGreeting) {
+                  const elapsed = animTime - greetStartTime;
+                  
+                  if (elapsed < greetDuration) {
+                    // Greeting animation phases
+                    const phase = elapsed / greetDuration;
+                    
+                    // Quick lean forward then back (like a bow/nod)
+                    const bowAmount = Math.sin(phase * Math.PI * 2) * 0.08;
+                    guideModel.rotation.x = bowAmount;
+                    
+                    // Side-to-side happy sway
+                    const swayAmount = Math.sin(elapsed * 5) * 0.06 * (1 - phase); // Decreases over time
+                    guideModel.rotation.z = originalRotationZ + swayAmount;
+                    
+                    // Slight bounce
+                    const bounceAmount = Math.abs(Math.sin(elapsed * 8)) * 0.015 * (1 - phase);
+                    guideModel.position.y = originalY + bounceAmount;
+                    
+                    // Gentle turn toward camera
+                    const turnAmount = Math.sin(elapsed * 3) * 0.05;
+                    guideModel.rotation.y = originalRotationY + turnAmount;
+                    
+                  } else {
+                    // Return to original pose smoothly
+                    isGreeting = false;
+                    guideModel.rotation.x = 0;
+                    guideModel.rotation.z = originalRotationZ;
+                    guideModel.rotation.y = originalRotationY;
+                    guideModel.position.y = originalY;
+                  }
+                } else {
+                  // Subtle idle animation - gentle breathing/swaying
+                  const idleSway = Math.sin(animTime * 1.2) * 0.01;
+                  const idleBreathe = Math.sin(animTime * 2) * 0.003;
+                  
+                  guideModel.rotation.z = originalRotationZ + idleSway;
+                  guideModel.position.y = originalY + idleBreathe;
+                }
+              };
+              
+              // Start greeting function
+              const startWave = () => {
+                if (!isGreeting) {
+                  isGreeting = true;
+                  greetStartTime = animTime;
+                  console.log('[Guide3D] Starting greeting animation');
+                }
+              };
+              
+              // Store update function for use in render loop
+              (guideModel as THREE.Group & { updateWave?: (delta: number) => void, startWave?: () => void }).updateWave = updateWaveAnimation;
+              (guideModel as THREE.Group & { startWave?: () => void }).startWave = startWave;
+              
+              // Setup animation mixer for any embedded animations
+              if (gltf.animations && gltf.animations.length > 0) {
+                guideMixer = new THREE.AnimationMixer(guideModel);
+                
+                // Try to find wave, idle, or walking animation
+                const anim = gltf.animations.find(a => 
+                  a.name.toLowerCase().includes('wave') ||
+                  a.name.toLowerCase().includes('idle') ||
+                  a.name.toLowerCase().includes('walk') ||
+                  a.name.toLowerCase().includes('greet')
+                ) || gltf.animations[0];
+                
+                if (anim) {
+                  const action = guideMixer.clipAction(anim);
+                  action.play();
+                  console.log('[Guide3D] Playing animation:', anim.name);
+                }
+              }
+              
+              // Welcome speech and wave after model loads
+              setTimeout(() => {
+                startWave(); // Start waving
+                speak("Hi! Welcome to What's Up New York! I'm here at the Brooklyn Bridge. How can I help you explore New York City today?");
+              }, 1000);
+            },
+            (progress) => {
+              console.log('[Guide3D] Loading:', ((progress.loaded / (progress.total || 1)) * 100).toFixed(0) + '%');
+            },
+            (error) => {
+              console.error('[Guide3D] Error loading model:', error);
+            }
+          );
+          
+          // Create renderer using existing WebGL context
+          guideRenderer = new THREE.WebGLRenderer({
+            canvas: _map.getCanvas(),
+            context: gl,
+            antialias: true
+          });
+          guideRenderer.autoClear = false;
+        },
+        
+        render: function(_gl, matrix) {
+          // Update animation
+          const delta = guideClock.getDelta();
+          if (guideMixer) {
+            guideMixer.update(delta);
+          }
+          
+          // Update procedural wave animation
+          if (guideModel) {
+            const modelWithWave = guideModel as THREE.Group & { updateWave?: (delta: number) => void };
+            if (modelWithWave.updateWave) {
+              modelWithWave.updateWave(delta);
+            }
+          }
+          
+          // Create rotation matrices
+          const rotationX = new THREE.Matrix4().makeRotationAxis(
+            new THREE.Vector3(1, 0, 0),
+            modelTransform.rotateX
+          );
+          const rotationY = new THREE.Matrix4().makeRotationAxis(
+            new THREE.Vector3(0, 1, 0),
+            modelTransform.rotateY
+          );
+          const rotationZ = new THREE.Matrix4().makeRotationAxis(
+            new THREE.Vector3(0, 0, 1),
+            modelTransform.rotateZ
+          );
+          
+          // Build local transformation matrix (model space to mercator space)
+          const l = new THREE.Matrix4()
+            .makeTranslation(
+              modelTransform.translateX,
+              modelTransform.translateY,
+              modelTransform.translateZ as number
+            )
+            .scale(
+              new THREE.Vector3(
+                modelTransform.scale,
+                -modelTransform.scale, // Flip Y for Mapbox coordinate system
+                modelTransform.scale
+              )
+            )
+            .multiply(rotationX)
+            .multiply(rotationY)
+            .multiply(rotationZ);
+          
+          // Combine with Mapbox's projection matrix (clone to avoid mutation)
+          const m = new THREE.Matrix4().fromArray(matrix);
+          guideCamera.projectionMatrix = m.clone().multiply(l);
+          
+          guideRenderer.resetState();
+          guideRenderer.render(guideScene, guideCamera);
+          mapInstance.triggerRepaint();
+        }
+      };
+      
+      // Add the custom 3D layer
+      mapInstance.addLayer(guideLayer);
+      console.log('[Map] 3D Guide Three.js layer added at Brooklyn Bridge');
+      
+      // Add glow effect under guide (circle layer still works)
+      mapInstance.addSource('guide-location', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [BROOKLYN_BRIDGE_LNG, BROOKLYN_BRIDGE_LAT]
+            },
+            properties: { name: 'NYC Guide' }
+          }]
+        }
+      });
+      
+      mapInstance.addLayer({
+        id: 'guide-glow',
+        type: 'circle',
+        source: 'guide-location',
+        paint: {
+          'circle-radius': 25,
+          'circle-color': '#f97316',
+          'circle-opacity': 0.5,
+          'circle-blur': 0.8,
+          'circle-pitch-alignment': 'map'
+        }
+      });
+      
+      // Click handler for glow (since custom layers don't have click events)
+      mapInstance.on('click', 'guide-glow', () => {
+        // Trigger wave animation when clicked
+        if (guideModel) {
+          const modelWithWave = guideModel as THREE.Group & { startWave?: () => void };
+          if (modelWithWave.startWave) {
+            modelWithWave.startWave();
+          }
+        }
+        speak("Hi there! Welcome to What's Up New York! I can help you find amazing restaurants, exciting events, iconic landmarks, or plan your perfect NYC adventure. Just use the search bar or click the mic to tell me what you're looking for!");
+      });
+      
+      mapInstance.on('mouseenter', 'guide-glow', () => {
+        mapInstance.getCanvas().style.cursor = 'pointer';
+      });
+      mapInstance.on('mouseleave', 'guide-glow', () => {
+        mapInstance.getCanvas().style.cursor = '';
+      });
 
       // Tooltip for subway status
       const popup = new mapboxgl.Popup({
