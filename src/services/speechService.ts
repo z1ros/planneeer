@@ -1,39 +1,122 @@
 /**
  * Speech Service - Text-to-Speech for the app
- * Uses Web Speech API (built-in) with option for ElevenLabs
+ * Uses ElevenLabs API with Bella voice
  */
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
-// Speech synthesis instance
-let currentUtterance: SpeechSynthesisUtterance | null = null;
+// ElevenLabs Configuration
+const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY;
+const BELLA_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Bella - Natural, conversational
+const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
+
+// Audio state
+let currentAudio: HTMLAudioElement | null = null;
 let isSpeaking = false;
 
 /**
  * Stop any currently playing speech
  */
 export function stopSpeaking(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  // Also stop Web Speech API as fallback
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
   isSpeaking = false;
-  currentUtterance = null;
 }
 
 /**
  * Check if currently speaking
  */
 export function getIsSpeaking(): boolean {
-  return isSpeaking || window.speechSynthesis?.speaking || false;
+  return isSpeaking;
 }
 
 /**
- * Speak text using Web Speech API
+ * Speak text using ElevenLabs API (with Web Speech fallback)
  */
-export function speak(text: string, options?: {
-  rate?: number;
-  pitch?: number;
-  volume?: number;
+export async function speak(text: string, options?: {
+  onEnd?: () => void;
+  onStart?: () => void;
+}): Promise<void> {
+  if (!text) return;
+
+  // Stop any current speech
+  stopSpeaking();
+
+  // Try ElevenLabs first
+  if (ELEVENLABS_API_KEY) {
+    try {
+      console.log('[Speech] Using ElevenLabs Bella voice');
+
+      const response = await fetch(`${ELEVENLABS_API_URL}/${BELLA_VOICE_ID}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: 'eleven_turbo_v2_5', // Fast, high-quality model
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.5,
+            use_speaker_boost: true
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`ElevenLabs API error: ${response.status}`);
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      currentAudio = new Audio(audioUrl);
+
+      currentAudio.onplay = () => {
+        isSpeaking = true;
+        options?.onStart?.();
+      };
+
+      currentAudio.onended = () => {
+        isSpeaking = false;
+        URL.revokeObjectURL(audioUrl);
+        currentAudio = null;
+        options?.onEnd?.();
+      };
+
+      currentAudio.onerror = () => {
+        console.error('[Speech] Audio playback error');
+        isSpeaking = false;
+        currentAudio = null;
+        // Fallback to Web Speech API
+        speakWithWebSpeech(text, options);
+      };
+
+      await currentAudio.play();
+      return;
+
+    } catch (error) {
+      console.error('[Speech] ElevenLabs error, falling back to Web Speech:', error);
+    }
+  }
+
+  // Fallback to Web Speech API
+  speakWithWebSpeech(text, options);
+}
+
+/**
+ * Fallback: Speak using Web Speech API
+ */
+function speakWithWebSpeech(text: string, options?: {
   onEnd?: () => void;
   onStart?: () => void;
 }): void {
@@ -42,26 +125,20 @@ export function speak(text: string, options?: {
     return;
   }
 
-  // Stop any current speech
-  stopSpeaking();
-
   const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Configure voice settings
-  utterance.rate = options?.rate || 1.0;
-  utterance.pitch = options?.pitch || 1.0;
-  utterance.volume = options?.volume || 1.0;
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
   utterance.lang = 'en-US';
 
   // Try to get a good voice
   const voices = window.speechSynthesis.getVoices();
-  const preferredVoice = voices.find(v => 
-    v.name.includes('Google') || 
-    v.name.includes('Samantha') || 
-    v.name.includes('Alex') ||
+  const preferredVoice = voices.find(v =>
+    v.name.includes('Google') ||
+    v.name.includes('Samantha') ||
     v.name.includes('Microsoft')
   ) || voices.find(v => v.lang.startsWith('en'));
-  
+
   if (preferredVoice) {
     utterance.voice = preferredVoice;
   }
@@ -73,17 +150,9 @@ export function speak(text: string, options?: {
 
   utterance.onend = () => {
     isSpeaking = false;
-    currentUtterance = null;
     options?.onEnd?.();
   };
 
-  utterance.onerror = (event) => {
-    console.error('[Speech] Error:', event);
-    isSpeaking = false;
-    currentUtterance = null;
-  };
-
-  currentUtterance = utterance;
   window.speechSynthesis.speak(utterance);
 }
 
@@ -107,12 +176,12 @@ export function speakItinerary(itinerary: {
   }>;
 }): void {
   const parts: string[] = [];
-  
+
   // Introduction
   parts.push(`Here's your itinerary: ${itinerary.title}.`);
   parts.push(itinerary.overview);
   parts.push(`Total duration: ${itinerary.totalDuration}. Estimated cost: ${itinerary.totalCost}.`);
-  
+
   // Each stop
   itinerary.stops.forEach((stop, index) => {
     parts.push(`Stop ${index + 1}: ${stop.name}, arriving at ${stop.arrivalTime}, spending ${stop.duration}.`);
@@ -123,9 +192,9 @@ export function speakItinerary(itinerary: {
       parts.push(`To get to the next stop: ${stop.transitToNext.instructions}`);
     }
   });
-  
+
   parts.push("That's your complete itinerary. Have a great trip!");
-  
+
   speak(parts.join(' '));
 }
 
@@ -154,18 +223,18 @@ export async function speakAIResponse(query: string, context?: string): Promise<
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, context })
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to get AI response');
     }
-    
+
     const data = await response.json();
     const text = data.response || data.text || '';
-    
+
     if (text) {
-      speak(text);
+      await speak(text);
     }
-    
+
     return text;
   } catch (error) {
     console.error('[Speech] AI response error:', error);
@@ -173,9 +242,12 @@ export async function speakAIResponse(query: string, context?: string): Promise<
   }
 }
 
-// Load voices when available
+// Load Web Speech voices when available (for fallback)
 if (typeof window !== 'undefined' && window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {
-    console.log('[Speech] Voices loaded:', window.speechSynthesis.getVoices().length);
+    console.log('[Speech] Web Speech voices loaded:', window.speechSynthesis.getVoices().length);
   };
 }
+
+console.log('[Speech] ElevenLabs Bella voice enabled:', !!ELEVENLABS_API_KEY);
+
