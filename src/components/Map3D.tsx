@@ -856,10 +856,10 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
                 }
               }
 
-              // Welcome speech and wave after model loads
+              // Start waving animation after model loads (no speech - browser blocks auto-play)
+              // Speech will happen when user clicks on the model
               setTimeout(() => {
-                startWave(); // Start waving
-                speak("Hi! Welcome to What's Up New York! I'm here at the Brooklyn Bridge. How can I help you explore New York City today?");
+                startWave(); // Start waving animation only
               }, 1000);
             },
             (progress) => {
