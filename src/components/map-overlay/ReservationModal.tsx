@@ -1,14 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ReservationModalProps {
     isOpen: boolean;
     onClose: () => void;
+    initialMessage?: string;
 }
 
-export default function ReservationModal({ isOpen, onClose }: ReservationModalProps) {
-    const [message, setMessage] = useState('');
+export default function ReservationModal({ isOpen, onClose, initialMessage = '' }: ReservationModalProps) {
+    const [message, setMessage] = useState(initialMessage);
     const [phone, setPhone] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+
+    // Update message when initialMessage changes (from itinerary item)
+    useEffect(() => {
+        if (initialMessage) {
+            setMessage(initialMessage);
+        }
+    }, [initialMessage, isOpen]);
     const [result, setResult] = useState<{
         success: boolean;
         message: string;
