@@ -614,6 +614,27 @@ app.get('/api/mta/:line', async (req, res) => {
             },
             entity: feed.entity.map(e => ({
                 id: e.id,
+                // Include Trip Updates (for delays)
+                tripUpdate: e.tripUpdate ? {
+                    trip: e.tripUpdate.trip ? {
+                        tripId: e.tripUpdate.trip.tripId,
+                        routeId: e.tripUpdate.trip.routeId
+                    } : null,
+                    stopTimeUpdate: e.tripUpdate.stopTimeUpdate ? e.tripUpdate.stopTimeUpdate.map(stu => ({
+                        arrival: stu.arrival ? { delay: stu.arrival.delay, time: stu.arrival.time } : null,
+                        departure: stu.departure ? { delay: stu.departure.delay, time: stu.departure.time } : null,
+                        stopId: stu.stopId
+                    })) : []
+                } : null,
+                // Include Alerts (for severe status)
+                alert: e.alert ? {
+                    headerText: e.alert.headerText ? {
+                        translation: e.alert.headerText.translation
+                    } : null,
+                    informedEntity: e.alert.informedEntity ? e.alert.informedEntity.map(ie => ({
+                        routeId: ie.routeId
+                    })) : []
+                } : null,
                 vehicle: e.vehicle ? {
                     trip: e.vehicle.trip ? {
                         tripId: e.vehicle.trip.tripId,
@@ -700,16 +721,52 @@ app.get('/api/landmarks', async (req, res) => {
     try {
         // Try NYC landmarks first (from nyc database)
         const nycLandmarksCollection = nycDb.collection('landmarks');
-        const nycLandmarks = await nycLandmarksCollection
-            .find({})
-            .project({
-                embedding: 0
-            })
-            .toArray();
+        const frictionCollection = nycDb.collection('friction_reports');
 
-        if (nycLandmarks.length > 0) {
-            console.log(`[Landmarks] Loaded ${nycLandmarks.length} landmarks from nyc.landmarks collection`);
-            return res.json(nycLandmarks);
+        const [nycLandmarks, frictionReports] = await Promise.all([
+            nycLandmarksCollection
+                .find({})
+                .project({ embedding: 0 })
+                .toArray(),
+            frictionCollection
+                .find({}) // Fetch friction reports (Reddit signals)
+                .sort({ created_utc: -1 }) // Newest first
+                .limit(50) // Limit to relevant recent ones
+                .toArray()
+        ]);
+
+        // Map friction reports to Landmark interface
+        const frictionLandmarks = frictionReports.map(report => {
+            // Determine severity color
+            const isSevere = report.urgency_score > 0.8;
+            const markerColor = isSevere ? '#FF3D00' : '#FFB347'; // Red vs Amber
+
+            return {
+                _id: report._id,
+                landmark_id: `friction_${report.post_id}`,
+                name: `⚠️ Community Report: ${report.title}`, // Prefix for clarity
+                category: 'Urban Friction', // distinct category
+                location: {
+                    type: 'Point',
+                    coordinates: report.location?.coordinates || [-74.006, 40.7128], // Fallback if loc missing (shouldn't happen if filtered)
+                    borough: 'Manhattan', // Generic fallback or derived
+                    neighborhood: 'Citywide'
+                },
+                vibe_metadata: {
+                    tags: ['Reddit', report.subreddit, 'Urban Stress', isSevere ? 'High Urgency' : 'Moderate'],
+                    description: `Context: ${report.body?.substring(0, 150)}...`, // Truncated body
+                    pro_tip: `Sentiment Score: ${(report.sentiment || 0).toFixed(2)}`
+                },
+                visual_assets: {
+                    vascular_color: markerColor
+                }
+            };
+        });
+
+        if (nycLandmarks.length > 0 || frictionLandmarks.length > 0) {
+            const combined = [...nycLandmarks, ...frictionLandmarks];
+            console.log(`[Landmarks] Loaded ${nycLandmarks.length} standard + ${frictionLandmarks.length} friction signals.`);
+            return res.json(combined);
         }
 
         // Fallback to Boston landmarks

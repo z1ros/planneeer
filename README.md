@@ -97,3 +97,13 @@ Real-time 3D visualization of Boston's MBTA transit system with restaurants, eve
 
 MIT
 # trip-planner
+ for subways 
+ ⚪ Grey Lines: Offline / No Signal
+This means the app hasn't received live data yet, or the connection is waiting. It shows the "last known" healthy structure.
+🔵 Cyan / Blue Lines: Healthy / Normal
+Good service. Traffic is moving freely. No significant delays.
+🟠 Amber / Orange Lines: Delayed
+Minor stress. Delays are averaging >5 minutes.
+🔴 Red Lines: Severe Disruption
+Major alerts (Suspensions, Reroutes, Signal Failures).
+(I also silently fixed a small code bug that might have caused errors while rendering colors).

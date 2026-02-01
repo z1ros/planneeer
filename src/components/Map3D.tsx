@@ -8,7 +8,7 @@ import nycStations from '../data/nycSubwayStations.json';
 import { fetchLandmarks, landmarksToGeoJSON } from '../services/landmarksApi';
 import { fetchNYCRestaurants, nycRestaurantsToGeoJSON } from '../services/restaurantApi';
 import { fetchEvents, eventsToGeoJSON } from '../services/eventsApi';
-import { fetchAllMTAFeeds, MTAEntity } from '../services/mtaApi';
+import { fetchAllMTAFeeds, MTAEntity, fetchLineStatuses, LineStatusMap } from '../services/mtaApi';
 import './Map3D.css';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -32,20 +32,28 @@ const NYC_CENTER: [number, number] = [-73.9855, 40.7580];
 
 // Vascular Digital Twin color palette - MLK Weekend Edition
 const VASCULAR_COLORS = {
-  // Healthy flow - Electric Cyan
-  healthyCyan: "#00f3ff",
-  healthyCyanCore: "#ffffff",
-  healthyCyanGlow: "#00b8cc",
+  // Healthy flow - Cyan / Teal (Normal)
+  healthyCyan: "#00E5FF",
+  healthyCyanCore: "#1DE9B6",
+  healthyCyanGlow: "#00E5FF",
 
-  // Delayed/stressed flow - Deep Orange/Red
-  delayCoral: "#ff3d00",
-  delayCoralCore: "#fff4e6",
-  delayCoralGlow: "#ff6b35",
+  // Delayed - Amber / Orange (System Stress)
+  delayAmber: "#FFB300",
+  delayAmberCore: "#fff4e6",
+  delayAmberGlow: "#FF9800",
 
-  // Sentiment colors for building underglow
-  positive: "#00f3ff", // Cyan (parent-friendly, positive)
-  negative: "#ffb347", // Amber (crowded, tourist-heavy)
-  neutral: "#4a6080", // Cool gray
+  // Severe - Coral / Red (Critical Stress)
+  severeRed: "#FF5252",
+  severeRedCore: "#ffebee",
+  severeRedGlow: "#E53935",
+
+  // Offline / Cached - Muted Gray
+  offlineGray: "#6B7280",
+
+  // Sentiment colors...
+  positive: "#00E5FF",
+  negative: "#FFB300",
+  neutral: "#6B7280",
 
   // Commuter rail colors
   commuterRailColor: "#56236E", // Brown/dark red for commuter rail
@@ -63,12 +71,12 @@ const VASCULAR_COLORS = {
 // Interpolate color based on speed (fast = blue-white, slow = amber)
 // Vascular flow colors based on speed and delay status
 function getVascularColor(speed: number, hasDelay: boolean = false, maxSpeed: number = 60): { core: string; glow: string; trail: string } {
-  // If route has delays, use coral/orange regardless of speed
+  // If route has delays, use amber/orange regardless of speed
   if (hasDelay) {
     return {
-      core: VASCULAR_COLORS.delayCoralCore,
-      glow: VASCULAR_COLORS.delayCoralGlow,
-      trail: VASCULAR_COLORS.delayCoral,
+      core: VASCULAR_COLORS.delayAmberCore,
+      glow: VASCULAR_COLORS.delayAmberGlow,
+      trail: VASCULAR_COLORS.delayAmber,
     };
   }
 
@@ -91,9 +99,9 @@ function getVascularColor(speed: number, hasDelay: boolean = false, maxSpeed: nu
   } else {
     // Slow: warming towards delay colors
     return {
-      core: VASCULAR_COLORS.delayCoralCore,
-      glow: VASCULAR_COLORS.delayCoralGlow,
-      trail: VASCULAR_COLORS.delayCoral,
+      core: VASCULAR_COLORS.delayAmberCore,
+      glow: VASCULAR_COLORS.delayAmberGlow,
+      trail: VASCULAR_COLORS.delayAmber,
     };
   }
 }
@@ -145,6 +153,57 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
   const pulsePhaseRef = useRef(0);
   const selectedBuildingRef = useRef<string | null>(null);
+
+  // Real-time Line Status (MTA)
+  const [lineStatuses, setLineStatuses] = useState<LineStatusMap>({});
+  const lineStatusesRef = useRef<LineStatusMap>({});
+
+  // Poll for Line Status (every 30s)
+  useEffect(() => {
+    const fetchStatus = async () => {
+      const statuses = await fetchLineStatuses();
+      setLineStatuses(statuses);
+      lineStatusesRef.current = statuses;
+
+      // Update Map Source if map is ready
+      if (map.current && map.current.getSource('nyc-routes')) {
+        const source = map.current.getSource('nyc-routes') as mapboxgl.GeoJSONSource;
+        const processedRoutes: GeoJSON.FeatureCollection = {
+          type: 'FeatureCollection',
+          features: (nycRoutes as GeoJSON.FeatureCollection).features.map(f => {
+            const routeId = f.properties?.route_id;
+            const statusData = statuses[routeId];
+
+            // Default to Healthy Cyan (Assume normal if no data)
+            let statusColor = VASCULAR_COLORS.healthyCyan;
+            let status = 'NORMAL';
+
+            if (statusData) {
+              status = statusData.status;
+              if (status === 'severe') statusColor = VASCULAR_COLORS.severeRed;
+              else if (status === 'delayed') statusColor = VASCULAR_COLORS.delayAmber;
+              else statusColor = VASCULAR_COLORS.healthyCyan;
+            }
+
+            return {
+              ...f,
+              properties: {
+                ...f.properties,
+                status: status || 'OFFLINE',
+                statusReason: statusData?.reason || '',
+                displayColor: statusColor // Computed color for style
+              }
+            };
+          })
+        };
+        source.setData(processedRoutes);
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // LERP State: Stores current "flight" data for every vehicle
   // id -> { startLng, startLat, endLng, endLat, startBearing, endBearing, startTime, duration }
@@ -309,7 +368,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       // ===========================================
       // 3D BUILDINGS LAYER
       // ===========================================
-      
+
       // Find the first symbol layer to place buildings below labels
       const layers = mapInstance.getStyle().layers;
       const labelLayerId = layers?.find(
@@ -370,7 +429,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         type: 'line',
         source: 'nyc-routes',
         paint: {
-          'line-color': ['get', 'color'],
+          'line-color': ['coalesce', ['get', 'displayColor'], '#00E5FF'], // Default to Cyan
           'line-width': 4,
           'line-opacity': 0.9
         }
@@ -382,7 +441,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
         type: 'line',
         source: 'nyc-routes',
         paint: {
-          'line-color': ['get', 'color'],
+          'line-color': ['coalesce', ['get', 'displayColor'], '#00E5FF'], // Default to Cyan
           'line-width': 12,
           'line-opacity': 0.3,
           'line-blur': 6
@@ -475,12 +534,12 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           'model-id': 'subway-model'
         },
         paint: {
-          'model-scale': [150, 150, 150], // Adjust scale based on model size
-          'model-rotation': [0, 0, 90], // Align with track
+          'model-scale': [45, 45, 45], // Smaller trains
+          'model-rotation': [0, 0, ['get', 'bearing']], // Align with train movement
           'model-translation': [0, 0, 0],
           'model-opacity': 1,
           'model-color-mix-intensity': 1,
-          'model-color': ['get', 'color'] // Dynamic color from properties
+          'model-color': ['get', 'color'] // Use original route color (don't change with status)
         }
       });
 
@@ -515,6 +574,65 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
       });
 
       console.log('[Map] NYC train vehicles layer added');
+
+      // Tooltip for subway status
+      const popup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        className: 'subway-tooltip',
+        maxWidth: '300px'
+      });
+
+      mapInstance.on('mouseenter', 'nyc-routes-line', (e) => {
+        if (!e.features || !e.features[0]) return;
+        const props = e.features[0].properties;
+        if (!props) return;
+
+        mapInstance.getCanvas().style.cursor = 'pointer';
+
+        const status = (props.status || 'NORMAL').toUpperCase();
+        const reason = props.statusReason || (status === 'NORMAL' ? 'Good Service' : 'Delays Reported');
+        const color = props.displayColor || '#00f3ff';
+        const lineName = props.name || `${props.route_id} Line`;
+
+        const html = `
+          <div style="padding: 4px;">
+            <strong style="display:block; font-size: 14px; margin-bottom: 4px;">${lineName}</strong>
+            <div style="font-size: 12px; font-weight: bold; color: ${color}; margin-bottom: 2px;">${status}</div>
+            <div style="font-size: 11px; opacity: 0.9;">${reason}</div>
+          </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(html).addTo(mapInstance);
+      });
+
+      mapInstance.on('mouseleave', 'nyc-routes-line', () => {
+        mapInstance.getCanvas().style.cursor = '';
+        popup.remove();
+      });
+
+      // Click to see details (sticky)
+      mapInstance.on('click', 'nyc-routes-line', (e) => {
+        if (!e.features || !e.features[0]) return;
+        const props = e.features[0].properties;
+        if (!props) return;
+
+        const status = (props.status || 'NORMAL').toUpperCase();
+        const reason = props.statusReason || (status === 'NORMAL' ? 'Good Service' : 'Delays Reported');
+        const color = props.displayColor || '#00f3ff';
+        const lineName = props.name || `${props.route_id} Line`;
+
+        new mapboxgl.Popup({ className: 'subway-detail-popup' })
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="padding: 8px; min-width: 150px;">
+              <h3 style="margin:0 0 5px 0; color: ${color}; border-bottom: 1px solid #333; padding-bottom: 3px;">${lineName}</h3>
+              <div style="font-weight: bold; margin-bottom: 4px;">Status: ${status}</div>
+              <div style="font-size: 13px; opacity: 0.9;">${reason}</div>
+            </div>
+          `)
+          .addTo(mapInstance);
+      });
 
       // ===========================================
       // 3D HUMAN MODEL - Live Location Marker
@@ -1921,6 +2039,20 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
     let animationId: number;
 
+    // Helper to calculate bearing between two points
+    const getBearing = (startLat: number, startLng: number, destLat: number, destLng: number) => {
+      const startLatRad = startLat * (Math.PI / 180);
+      const startLngRad = startLng * (Math.PI / 180);
+      const destLatRad = destLat * (Math.PI / 180);
+      const destLngRad = destLng * (Math.PI / 180);
+
+      const y = Math.sin(destLngRad - startLngRad) * Math.cos(destLatRad);
+      const x = Math.cos(startLatRad) * Math.sin(destLatRad) -
+        Math.sin(startLatRad) * Math.cos(destLatRad) * Math.cos(destLngRad - startLngRad);
+      const brng = Math.atan2(y, x);
+      return (brng * 180 / Math.PI + 360) % 360;
+    };
+
     const animateTrains = () => {
       const now = Math.floor(Date.now() / 1000);
       const trainFeatures: GeoJSON.Feature[] = [];
@@ -1930,6 +2062,7 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
 
         let lat: number;
         let lng: number;
+        let bearing: number = 0;
 
         if (train.status === 'IN_TRANSIT_TO' && train.nextStop) {
           // Calculate real-time LERP progress
@@ -1942,10 +2075,22 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
           // Interpolate between current and next stop
           lat = train.currentStop.lat + (train.nextStop.lat - train.currentStop.lat) * lerpProgress;
           lng = train.currentStop.lng + (train.nextStop.lng - train.currentStop.lng) * lerpProgress;
+
+          // Calculate bearing
+          bearing = getBearing(train.currentStop.lat, train.currentStop.lng, train.nextStop.lat, train.nextStop.lng);
         } else {
           // Train is stopped at station
           lat = train.currentStop.lat;
           lng = train.currentStop.lng;
+          // Keep previous bearing or typical station alignment (optional)
+          // For now, default to 0 or try to infer from route geometry if possible, 
+          // but simpler to just hold last bearing if we had state. 
+          // Since we don't track per-train state across frames easily here without mapped state, 
+          // we'll leave it at 0 or look ahead if possible.
+          // Let's assume 0 for stopped, or better, pointing to next stop if known
+          if (train.nextStop) {
+            bearing = getBearing(train.currentStop.lat, train.currentStop.lng, train.nextStop.lat, train.nextStop.lng);
+          }
         }
 
         trainFeatures.push({
@@ -1959,7 +2104,8 @@ export default function Map3D({ settings, selectedLocation, mapCommand, itinerar
             routeId: train.routeId,
             color: MTA_ROUTE_COLORS[train.routeId] || '#00f3ff',
             status: train.status,
-            stopName: train.currentStop.name || train.currentStopId
+            stopName: train.currentStop.name || train.currentStopId,
+            bearing: bearing - 90 // Adjust rotation: Model likely faces +X or we need to correct for Mapbox rotation
           }
         });
       });
