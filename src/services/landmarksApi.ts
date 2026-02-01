@@ -95,13 +95,14 @@ export function landmarksToGeoJSON(landmarks: NYCLandmark[]): GeoJSON.FeatureCol
                 properties: {
                     id: landmark._id,
                     name: landmark.name,
-                    description: landmark.vibe_metadata?.description || '',
+                    description: landmark.vibe_metadata?.description || (landmark as any).description || '',
                     category: landmark.category,
                     borough: landmark.location.borough,
                     neighborhood: landmark.location.neighborhood,
-                    tags: landmark.vibe_metadata?.tags?.join(', ') || '',
+                    tags: landmark.vibe_metadata?.tags?.join(', ') || (landmark as any).tags?.join(', ') || '',
                     bestTime: landmark.vibe_metadata?.best_time_to_visit || '',
                     proTip: landmark.vibe_metadata?.pro_tip || '',
+                    address: (landmark as any).address || '',
                     markerColor,
                 },
             };

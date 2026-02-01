@@ -40,7 +40,7 @@ async function connectDB() {
 
         // NYC database (new)
         nycDb = client.db('nyc');
-        nycEventsCollection = nycDb.collection('events_v2');
+        nycEventsCollection = nycDb.collection('events_v2'); // Use events_v2 which has venue coordinates
         nycRestaurantsCollection = nycDb.collection('restaurants');
         nycLandmarksCollection = nycDb.collection('landmarks');
 
@@ -767,13 +767,13 @@ app.get('/api/landmarks', async (req, res) => {
 
         const [nycLandmarks, frictionReports] = await Promise.all([
             nycLandmarksCollection
-                .find({})
+                .find({ 'location.coordinates': { $exists: true, $ne: null } })
                 .project({ embedding: 0 })
                 .toArray(),
             frictionCollection
-                .find({}) // Fetch friction reports (Reddit signals)
-                .sort({ created_utc: -1 }) // Newest first
-                .limit(50) // Limit to relevant recent ones
+                .find({ 'location.coordinates': { $exists: true, $ne: null } })
+                .sort({ created_utc: -1 })
+                .limit(50)
                 .toArray()
         ]);
 
@@ -1110,8 +1110,15 @@ app.get('/api/events/range', async (req, res) => {
 // Get all NYC events
 app.get('/api/nyc/events', async (req, res) => {
     try {
+        // Events have 'venue' object with lat/lng, not 'location.coordinates'
         const events = await nycEventsCollection
-            .find({})
+            .find({
+                $or: [
+                    { 'venue.lat': { $exists: true } },
+                    { 'venue.latitude': { $exists: true } },
+                    { 'location.coordinates': { $exists: true } }
+                ]
+            })
             .toArray();
 
         console.log(`[NYC Events] Returning ${events.length} events`);
@@ -1119,6 +1126,77 @@ app.get('/api/nyc/events', async (req, res) => {
     } catch (error) {
         console.error('Error fetching NYC events:', error);
         res.status(500).json({ error: 'Failed to fetch NYC events' });
+    }
+});
+
+// Debug endpoint - check data counts and sample
+app.get('/api/debug/data-check', async (req, res) => {
+    try {
+        const [
+            totalEvents,
+            eventsWithCoords,
+            totalLandmarks,
+            landmarksWithCoords,
+            totalRestaurants,
+            restaurantsWithCoords
+        ] = await Promise.all([
+            nycEventsCollection.countDocuments({}),
+            nycEventsCollection.countDocuments({ 'location.coordinates': { $exists: true, $ne: null } }),
+            nycLandmarksCollection.countDocuments({}),
+            nycLandmarksCollection.countDocuments({ 'location.coordinates': { $exists: true, $ne: null } }),
+            nycRestaurantsCollection.countDocuments({}),
+            nycRestaurantsCollection.countDocuments({ 'location.coordinates': { $exists: true, $ne: null } })
+        ]);
+
+        // Get sample event to see FULL structure
+        const sampleEvent = await nycEventsCollection.findOne({});
+        const sampleLandmark = await nycLandmarksCollection.findOne({});
+
+        // Count events with venue coordinates
+        const eventsWithVenue = await nycEventsCollection.countDocuments({
+            $or: [
+                { 'venue.lat': { $exists: true } },
+                { 'venue.latitude': { $exists: true } }
+            ]
+        });
+
+        // Count events with embeddings
+        const eventsWithEmbedding = await nycEventsCollection.countDocuments({
+            'embedding': { $exists: true, $type: 'array' }
+        });
+
+        // Search for football events
+        const footballEvents = await nycEventsCollection.find({
+            $or: [
+                { title: { $regex: /football/i } },
+                { description: { $regex: /football/i } },
+                { categories: { $regex: /football/i } }
+            ]
+        }).limit(5).toArray();
+
+        res.json({
+            events: {
+                total: totalEvents,
+                withLocationCoords: eventsWithCoords,
+                withVenueCoords: eventsWithVenue,
+                withEmbedding: eventsWithEmbedding
+            },
+            landmarks: { total: totalLandmarks, withCoordinates: landmarksWithCoords },
+            restaurants: { total: totalRestaurants, withCoordinates: restaurantsWithCoords },
+            footballEvents: footballEvents.map(e => ({ title: e.title, hasEmbedding: !!e.embedding, venue: e.venue })),
+            samples: {
+                event: sampleEvent ? {
+                    allKeys: Object.keys(sampleEvent),
+                    venue: sampleEvent.venue,
+                    title: sampleEvent.title,
+                    hasEmbedding: !!sampleEvent.embedding
+                } : null,
+                landmark: sampleLandmark ? { hasLocation: !!sampleLandmark.location, locationKeys: sampleLandmark.location ? Object.keys(sampleLandmark.location) : [] } : null
+            }
+        });
+    } catch (error) {
+        console.error('Debug check error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -2019,6 +2097,252 @@ app.post('/api/search/unified', async (req, res) => {
 // ============================================
 
 /**
+ * POST /api/search
+ * Simple semantic search - returns raw results as GeoJSON for map display
+ * User selects items, then calls /api/plan/smart to build itinerary
+ */
+app.post('/api/search', async (req, res) => {
+    try {
+        const { query, limit = 30, type = null } = req.body;
+
+        if (!query || query.trim().length === 0) {
+            return res.status(400).json({ error: 'Search query is required' });
+        }
+
+        console.log('[Search] Query:', query, '| Type filter:', type || 'all');
+
+        // Known cuisine/category keywords that should trigger strict filtering
+        const CUISINE_KEYWORDS = [
+            'indian', 'mexican', 'italian', 'chinese', 'japanese', 'thai', 'korean',
+            'vietnamese', 'french', 'greek', 'mediterranean', 'american', 'pizza',
+            'sushi', 'ramen', 'burger', 'tacos', 'curry', 'seafood', 'steakhouse',
+            'vegan', 'vegetarian', 'halal', 'kosher', 'bbq', 'barbecue', 'deli',
+            'bakery', 'cafe', 'coffee', 'dessert', 'ice cream', 'bar', 'pub'
+        ];
+        const EVENT_KEYWORDS = [
+            'music', 'concert', 'comedy', 'theater', 'theatre', 'dance', 'art',
+            'festival', 'sports', 'game', 'party', 'club', 'dj', 'live', 'show',
+            'exhibition', 'gallery', 'film', 'movie', 'performance', 'opera', 'jazz',
+            'rock', 'hip hop', 'electronic', 'classical',
+            'football', 'soccer', 'nfl', 'mls', 'basketball', 'baseball', 'hockey',
+            'giants', 'jets', 'knicks', 'yankees', 'mets', 'rangers', 'nycfc'
+        ];
+        const LANDMARK_KEYWORDS = [
+            'museum', 'park', 'historic', 'monument', 'statue', 'bridge', 'building',
+            'church', 'cathedral', 'library', 'garden', 'zoo', 'aquarium', 'tower',
+            'memorial', 'landmark', 'attraction', 'tourist'
+        ];
+
+        const queryLower = query.toLowerCase().trim();
+        const queryWords = queryLower.split(/\s+/);
+
+        // Check if query contains a known category keyword
+        const hasCuisineKeyword = queryWords.some(w => CUISINE_KEYWORDS.includes(w));
+        const hasEventKeyword = queryWords.some(w => EVENT_KEYWORDS.includes(w));
+        const hasLandmarkKeyword = queryWords.some(w => LANDMARK_KEYWORDS.includes(w));
+        const useStrictFilter = hasCuisineKeyword || hasEventKeyword || hasLandmarkKeyword;
+
+        console.log('[Search] Strict filter:', useStrictFilter, '| Cuisine:', hasCuisineKeyword, '| Event:', hasEventKeyword, '| Landmark:', hasLandmarkKeyword);
+
+        // Get query embedding for vector search
+        const queryEmbedding = await getQueryEmbedding(query);
+
+        // Build regex for category filtering (only used if strict filter is on)
+        const categoryRegex = new RegExp(queryWords.join('|'), 'i');
+
+        // Determine which collections to search based on type filter
+        const searchRestaurants = !type || type === 'restaurants';
+        const searchEvents = !type || type === 'events';
+        const searchLandmarks = !type || type === 'landmarks';
+
+        // Build aggregation pipelines
+        const buildRestaurantPipeline = () => {
+            const pipeline = [
+                { $vectorSearch: {
+                    index: 'restaurant_vector_index',
+                    path: 'embedding',
+                    queryVector: queryEmbedding,
+                    numCandidates: 200,
+                    limit: useStrictFilter ? 100 : limit
+                }},
+                { $addFields: { score: { $meta: 'vectorSearchScore' } } }
+            ];
+            // Only add category filter for known cuisine keywords
+            if (useStrictFilter && hasCuisineKeyword) {
+                pipeline.push({ $match: {
+                    $or: [
+                        { cuisine: categoryRegex },
+                        { categories: categoryRegex }
+                    ]
+                }});
+            }
+            pipeline.push({ $match: { 'location.coordinates': { $exists: true } }});
+            pipeline.push({ $limit: limit });
+            pipeline.push({ $project: { embedding: 0 } });
+            return pipeline;
+        };
+
+        const buildEventPipeline = () => {
+            // Use TEXT SEARCH for events - search in title, description, and categories
+            const pipeline = [
+                { $match: {
+                    $or: [
+                        { title: { $regex: categoryRegex } },
+                        { name: { $regex: categoryRegex } },
+                        { description: { $regex: categoryRegex } },
+                        { categories: { $regex: categoryRegex } },  // Works for both array and string
+                        { categories: { $in: queryWords } }  // Exact match in array
+                    ]
+                }},
+                // Events use venue.lat/lng
+                { $match: {
+                    $or: [
+                        { 'venue.lat': { $exists: true, $ne: null } },
+                        { 'venue.latitude': { $exists: true, $ne: null } },
+                        { 'location.coordinates': { $exists: true } }
+                    ]
+                }},
+                { $addFields: { score: 0.8 } },  // Give events a score for sorting
+                { $limit: limit },
+                { $project: { embedding: 0 } }
+            ];
+            return pipeline;
+        };
+
+        const buildLandmarkPipeline = () => {
+            // Simple vector search for landmarks
+            const pipeline = [
+                { $vectorSearch: {
+                    index: 'landmark_vector_index',
+                    path: 'embedding',
+                    queryVector: queryEmbedding,
+                    numCandidates: 200,
+                    limit: limit
+                }},
+                { $addFields: { score: { $meta: 'vectorSearchScore' } } },
+                { $match: { 'location.coordinates': { $exists: true } }},
+                { $project: { embedding: 0 } }
+            ];
+            return pipeline;
+        };
+
+        // Search using VECTOR SEARCH (+ optional category filter for known keywords)
+        // Events use text search so they don't need queryEmbedding
+        const [places, events, landmarks] = await Promise.all([
+            searchRestaurants && queryEmbedding
+                ? nycRestaurantsCollection.aggregate(buildRestaurantPipeline()).toArray()
+                    .catch(err => { console.error('[Search] Restaurant error:', err.message); return []; })
+                : [],
+            searchEvents
+                ? nycEventsCollection.aggregate(buildEventPipeline()).toArray()
+                    .catch(err => { console.error('[Search] Event error:', err.message); return []; })
+                : [],
+            searchLandmarks && queryEmbedding
+                ? nycLandmarksCollection.aggregate(buildLandmarkPipeline()).toArray()
+                    .catch(err => { console.error('[Search] Landmark error:', err.message); return []; })
+                : []
+        ]);
+
+        console.log(`[Search] Found: ${places.length} restaurants, ${events.length} events, ${landmarks.length} landmarks`);
+
+        // Log top scores for debugging
+        if (events.length > 0) {
+            const topScores = events.slice(0, 3).map(e => ({ title: e.title, score: e.score?.toFixed(3) }));
+            console.log('[Search] Top event scores:', JSON.stringify(topScores));
+        }
+
+        // Convert to GeoJSON features for map display (filter out invalid locations)
+        const features = [
+            ...places
+                .filter(p => p.location?.coordinates)
+                .map(p => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: p.location.coordinates
+                    },
+                    properties: {
+                        id: p._id.toString(),
+                        name: p.name,
+                        type: 'restaurant',
+                        category: p.cuisine || '',
+                        rating: p.rating || null,
+                        price: p.vibe_metadata?.price_range || '',
+                        description: p.vibe_metadata?.description || p.description || '',
+                        address: p.address || ''
+                    }
+                })),
+            ...events
+                .filter(e => e.venue?.lat || e.venue?.latitude || e.location?.coordinates)
+                .map(e => {
+                    // Get coordinates from venue or location
+                    let coords;
+                    if (e.venue?.lat && e.venue?.lng) {
+                        coords = [e.venue.lng, e.venue.lat];
+                    } else if (e.venue?.latitude && e.venue?.longitude) {
+                        coords = [e.venue.longitude, e.venue.latitude];
+                    } else if (e.location?.coordinates) {
+                        coords = e.location.coordinates;
+                    } else {
+                        coords = [-73.9855, 40.7580]; // NYC default
+                    }
+                    return {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: coords
+                        },
+                        properties: {
+                            id: e._id.toString(),
+                            name: e.title || e.name,
+                            type: 'event',
+                            category: e.categories?.join(', ') || e.event_type || '',
+                            price: e.price || 'Free',
+                            description: e.vibe_metadata?.description || e.description || '',
+                            date: e.start_time || e.timing?.startDate || '',
+                            score: e.score ? (e.score * 100).toFixed(0) + '%' : ''
+                        }
+                    };
+                }),
+            ...landmarks
+                .filter(l => l.location?.coordinates)
+                .map(l => ({
+                    type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: l.location.coordinates
+                },
+                properties: {
+                    id: l._id.toString(),
+                    name: l.name,
+                    type: 'landmark',
+                    category: l.category || '',
+                    description: l.vibe_metadata?.description || ''
+                }
+            }))
+        ];
+
+        res.json({
+            type: 'FeatureCollection',
+            features,
+            metadata: {
+                query,
+                total: features.length,
+                counts: {
+                    restaurants: places.length,
+                    events: events.length,
+                    landmarks: landmarks.length
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('[Search] Error:', error);
+        res.status(500).json({ error: 'Search failed' });
+    }
+});
+
+/**
  * Parse budget and preferences from natural language query
  */
 function parseQueryIntent(query) {
@@ -2345,6 +2669,689 @@ app.post('/api/plan/smart', async (req, res) => {
     } catch (error) {
         console.error('[Smart Planner] Error:', error);
         res.status(500).json({ error: 'Failed to create plan' });
+    }
+});
+
+
+/**
+ * POST /api/plan/from-query
+ * Create an itinerary directly from a natural language query
+ * E.g., "cozy restaurant, indian dinner, football game, brooklyn bridge"
+ */
+app.post('/api/plan/from-query', async (req, res) => {
+    const startTime = Date.now();
+
+    try {
+        const { query, userLocation } = req.body;
+
+        if (!query || query.trim().length === 0) {
+            return res.status(400).json({ error: 'Query is required' });
+        }
+
+        console.log('[Query Planner] Processing:', query);
+
+        // Step 1: Use Gemini to parse the natural language query into specific searches
+        const parsePrompt = `Parse this trip request into specific place searches for NYC.
+
+User request: "${query}"
+
+Extract each distinct place/activity the user wants to visit. For each, determine:
+- searchQuery: What to search for in a database (e.g., "cozy italian restaurant", "indian restaurant", "football game", "brooklyn bridge")
+- type: "restaurant" | "event" | "landmark"
+- timePreference: "breakfast" | "lunch" | "dinner" | "anytime" (for restaurants)
+- priority: 1-5 (1 = must visit, 5 = optional)
+
+Return JSON array:
+[
+  {"searchQuery": "cozy restaurant", "type": "restaurant", "timePreference": "lunch", "priority": 1},
+  {"searchQuery": "indian restaurant", "type": "restaurant", "timePreference": "dinner", "priority": 1},
+  {"searchQuery": "football game NFL", "type": "event", "timePreference": "anytime", "priority": 2},
+  {"searchQuery": "brooklyn bridge", "type": "landmark", "timePreference": "anytime", "priority": 1}
+]
+
+Only return the JSON array, nothing else. Include 3-6 items max.`;
+
+        const parseResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: parsePrompt }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 1000 }
+            })
+        });
+
+        if (!parseResponse.ok) {
+            throw new Error('Failed to parse query');
+        }
+
+        const parseData = await parseResponse.json();
+        let parseText = parseData.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        
+        // Clean up JSON
+        if (parseText.includes('```')) {
+            parseText = parseText.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+        }
+        
+        let searchItems;
+        try {
+            searchItems = JSON.parse(parseText);
+        } catch (e) {
+            console.error('[Query Planner] Failed to parse search items:', parseText);
+            searchItems = [];
+        }
+
+        console.log('[Query Planner] Parsed into', searchItems.length, 'searches:', searchItems.map(s => s.searchQuery));
+
+        // Step 2: Search for each item in the database
+        const foundItems = [];
+        
+        for (const searchItem of searchItems) {
+            const queryEmbedding = await getQueryEmbedding(searchItem.searchQuery);
+            let results = [];
+
+            if (searchItem.type === 'restaurant' && queryEmbedding) {
+                results = await nycRestaurantsCollection.aggregate([
+                    { $vectorSearch: { 
+                        index: 'restaurant_vector_index', 
+                        path: 'embedding', 
+                        queryVector: queryEmbedding, 
+                        numCandidates: 50, 
+                        limit: 3 
+                    }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
+                    { $match: { 'location.coordinates': { $exists: true } } },
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                results = results.map(r => ({
+                    id: r._id?.toString(),
+                    name: r.name,
+                    type: 'restaurant',
+                    description: r.vibe_metadata?.description || r.cuisine || '',
+                    address: r.address,
+                    price: r.price_level || r.vibe_metadata?.price_range || '',
+                    coordinates: r.location?.coordinates ? {
+                        lat: r.location.coordinates[1],
+                        lng: r.location.coordinates[0]
+                    } : null,
+                    score: r.score,
+                    timePreference: searchItem.timePreference
+                }));
+            } else if (searchItem.type === 'event') {
+                // Search events by text matching
+                const searchRegex = new RegExp(searchItem.searchQuery.split(' ').join('|'), 'i');
+                results = await nycEventsCollection.find({
+                    $or: [
+                        { title: searchRegex },
+                        { name: searchRegex },
+                        { description: searchRegex },
+                        { categories: searchRegex }
+                    ]
+                }).limit(3).toArray().catch(() => []);
+
+                results = results.map(e => ({
+                    id: e._id?.toString(),
+                    name: e.title || e.name,
+                    type: 'event',
+                    description: e.description || '',
+                    address: e.venue?.name || e.venue?.address || '',
+                    price: e.price || 'Varies',
+                    coordinates: e.venue?.lat && e.venue?.lng ? {
+                        lat: e.venue.lat,
+                        lng: e.venue.lng
+                    } : null,
+                    score: 0.8
+                }));
+            } else if (searchItem.type === 'landmark' && queryEmbedding) {
+                results = await nycLandmarksCollection.aggregate([
+                    { $vectorSearch: { 
+                        index: 'landmark_vector_index', 
+                        path: 'embedding', 
+                        queryVector: queryEmbedding, 
+                        numCandidates: 50, 
+                        limit: 3 
+                    }},
+                    { $addFields: { score: { $meta: 'vectorSearchScore' } } },
+                    { $match: { 'location.coordinates': { $exists: true } } },
+                    { $project: { embedding: 0 } }
+                ]).toArray().catch(() => []);
+
+                results = results.map(l => ({
+                    id: l._id?.toString(),
+                    name: l.name,
+                    type: 'landmark',
+                    description: l.vibe_metadata?.description || l.description || '',
+                    address: l.address || 'NYC',
+                    price: '$0',
+                    coordinates: l.location?.coordinates ? {
+                        lat: l.location.coordinates[1],
+                        lng: l.location.coordinates[0]
+                    } : null,
+                    score: l.score
+                }));
+            }
+
+            // Add best match for this search
+            if (results.length > 0) {
+                const best = results[0];
+                if (best.coordinates) {
+                    foundItems.push(best);
+                    console.log(`[Query Planner] Found for "${searchItem.searchQuery}": ${best.name}`);
+                }
+            }
+        }
+
+        if (foundItems.length === 0) {
+            return res.status(404).json({ error: 'No matching places found for your request' });
+        }
+
+        console.log('[Query Planner] Found', foundItems.length, 'places, building itinerary...');
+
+        // Step 3: Build detailed itinerary using the existing endpoint logic
+        // (Reusing the build-detailed logic inline)
+        
+        // Find nearest subway station for each location
+        const findNearestStation = (lat, lng) => {
+            let nearest = null;
+            let minDist = Infinity;
+            for (const [stopId, stop] of Object.entries(NYC_STOPS)) {
+                const dist = Math.sqrt(Math.pow(stop.lat - lat, 2) + Math.pow(stop.lng - lng, 2));
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = { ...stop, id: stopId };
+                }
+            }
+            const walkingMinutes = Math.round(minDist * 69 * 20);
+            return { station: nearest, walkingMinutes: Math.min(walkingMinutes, 15) };
+        };
+
+        const getSubwayLines = (stopId) => {
+            if (!stopId) return [];
+            const prefix = stopId.charAt(0);
+            const lineMap = {
+                '1': ['1', '2', '3'], '2': ['4', '5', '6'], '3': ['7'],
+                '4': ['N', 'Q', 'R', 'W'], '5': ['B', 'D', 'F', 'M'],
+                '6': ['J', 'Z'], '7': ['G'], 'A': ['A', 'C', 'E'],
+                'B': ['B', 'D', 'F', 'M'], 'D': ['B', 'D', 'F', 'M'],
+                'F': ['F', 'M'], 'G': ['G'], 'J': ['J', 'Z'], 'L': ['L'],
+                'M': ['M'], 'N': ['N', 'Q', 'R', 'W'], 'Q': ['N', 'Q', 'R', 'W'],
+                'R': ['N', 'Q', 'R', 'W'], 'S': ['S']
+            };
+            return lineMap[prefix] || ['1', '2', '3'];
+        };
+
+        // Enrich items with subway info
+        const enrichedItems = foundItems.map(item => {
+            if (!item.coordinates) return { ...item, nearestStation: null };
+            const { station, walkingMinutes } = findNearestStation(item.coordinates.lat, item.coordinates.lng);
+            const lines = getSubwayLines(station?.id);
+            return {
+                ...item,
+                nearestStation: station ? { name: station.name, id: station.id, lines, walkingMinutes } : null
+            };
+        });
+
+        // Build itinerary descriptions
+        const itemDescriptions = enrichedItems.map((item, i) => {
+            const stationInfo = item.nearestStation 
+                ? `Nearest subway: ${item.nearestStation.name} (${item.nearestStation.lines.join('/')}) - ${item.nearestStation.walkingMinutes} min walk`
+                : 'No subway nearby';
+            return `${i + 1}. ${item.name} (${item.type})
+   - Location: ${item.address || 'NYC'}
+   - ${stationInfo}
+   - Description: ${item.description || 'Popular NYC destination'}
+   - Price: ${item.price || 'Varies'}`;
+        }).join('\n\n');
+
+        const currentHour = new Date().getHours();
+        const defaultStartTime = currentHour < 12 ? '10:00 AM' : '2:00 PM';
+
+        const buildPrompt = `You are an expert NYC local trip planner. Create a realistic, optimized day itinerary for these spots:
+
+PLACES TO VISIT:
+${itemDescriptions}
+
+ORIGINAL REQUEST: "${query}"
+
+START: ${userLocation?.address || 'Midtown Manhattan'}
+TIME: ${defaultStartTime}
+
+CRITICAL RULES:
+1. GEOGRAPHIC OPTIMIZATION: Group nearby locations together. Don't zigzag across Manhattan.
+2. REALISTIC TIMING: 
+   - Restaurants: 45-90 min depending on type
+   - Landmarks/Museums: 1-3 hours
+   - Events: Match the actual event duration
+3. ACCURATE COSTS (single number):
+   - Free landmarks: "$0"
+   - Casual lunch: "$15-25"  
+   - Nice dinner: "$40-60"
+4. PRESERVE EXACT NAMES: Use the exact place names from the list above
+5. The last stop has transitToNext: null
+
+Generate JSON:
+{
+  "title": "[Creative 5-7 word title]",
+  "overview": "[One compelling sentence]",
+  "totalDuration": "[X] hours",
+  "totalCost": "$[low]-[high] estimated",
+  "stops": [
+    {
+      "order": 1,
+      "name": "[EXACT name from list]",
+      "type": "food|landmark|event|activity",
+      "arrivalTime": "10:00 AM",
+      "departureTime": "11:15 AM", 
+      "duration": "1 hr 15 min",
+      "whyVisit": "[Specific reason]",
+      "whatToDo": "[Specific recommendations]",
+      "proTip": "[Insider tip]",
+      "cost": "$25",
+      "transitToNext": {
+        "method": "subway",
+        "duration": "18 min",
+        "instructions": "Walk to X station. Take Y train to Z.",
+        "subwayLines": ["1"],
+        "fromStation": "Station A",
+        "toStation": "Station B"
+      }
+    }
+  ],
+  "tips": ["Tip 1", "Tip 2", "Tip 3"]
+}`;
+
+        const buildResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: buildPrompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 4000, responseMimeType: 'application/json' }
+            })
+        });
+
+        if (!buildResponse.ok) {
+            throw new Error('Failed to build itinerary');
+        }
+
+        const buildData = await buildResponse.json();
+        let itineraryText = buildData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        if (itineraryText.includes('```')) {
+            itineraryText = itineraryText.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+        }
+
+        let itinerary;
+        try {
+            itinerary = JSON.parse(itineraryText);
+        } catch (e) {
+            console.error('[Query Planner] Failed to parse itinerary:', itineraryText.substring(0, 500));
+            throw new Error('Failed to parse itinerary');
+        }
+
+        // Enrich stops with coordinates
+        const normalizeForMatch = (str) => (str || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\b(the|a|an|at|in|on|of|and|for|to)\b/g, '').trim();
+        
+        itinerary.stops = itinerary.stops.map((stop, index) => {
+            const normalizedStop = normalizeForMatch(stop.name);
+            const originalItem = enrichedItems.find(item => {
+                const normalizedItem = normalizeForMatch(item.name);
+                return normalizedItem.includes(normalizedStop) || normalizedStop.includes(normalizedItem) ||
+                    normalizedStop.split(' ').some(w => w.length > 3 && normalizedItem.includes(w));
+            });
+
+            return {
+                ...stop,
+                id: originalItem?.id || `stop-${index + 1}`,
+                coordinates: originalItem?.coordinates || null,
+                nearestStation: originalItem?.nearestStation || null,
+                icon: stop.type === 'food' ? 'fa-utensils' : stop.type === 'event' ? 'fa-calendar' : stop.type === 'landmark' ? 'fa-landmark' : 'fa-location-dot',
+                iconBg: stop.type === 'food' ? '#ec4899' : stop.type === 'event' ? '#8b5cf6' : stop.type === 'landmark' ? '#ef4444' : '#3b82f6'
+            };
+        });
+
+        // Calculate budget
+        const parseCost = (costStr) => {
+            if (!costStr) return 0;
+            const str = costStr.toString().toLowerCase();
+            if (str === 'free' || str === 'tbd' || str === '$0') return 0;
+            const match = str.match(/\$?(\d+(?:\.\d{2})?)/);
+            return match ? parseFloat(match[1]) : 0;
+        };
+
+        const budget = { food: 0, activity: 0, transit: 2.90 * Math.max(1, itinerary.stops.length - 1) };
+        itinerary.stops.forEach(stop => {
+            const cost = parseCost(stop.cost);
+            if (stop.type === 'food') budget.food += cost;
+            else budget.activity += cost;
+        });
+
+        console.log(`[Query Planner] Built itinerary "${itinerary.title}" with ${itinerary.stops.length} stops in ${Date.now() - startTime}ms`);
+
+        res.json({
+            success: true,
+            itinerary,
+            budget,
+            totalSpent: budget.food + budget.activity + budget.transit,
+            foundItems: enrichedItems,
+            query,
+            took_ms: Date.now() - startTime
+        });
+
+    } catch (error) {
+        console.error('[Query Planner] Error:', error);
+        res.status(500).json({ error: 'Failed to create itinerary from query', message: error.message });
+    }
+});
+
+
+/**
+ * POST /api/plan/build-detailed
+ * Build a detailed AI-powered itinerary from user-selected items
+ * Uses Gemini to create optimized route with subway directions, timing, and tips
+ */
+app.post('/api/plan/build-detailed', async (req, res) => {
+    const startTime = Date.now();
+
+    try {
+        const { items, userLocation, startTime: requestedStartTime } = req.body;
+
+        if (!items || items.length === 0) {
+            return res.status(400).json({ error: 'At least one item is required' });
+        }
+
+        console.log('[Detailed Planner] Building itinerary for', items.length, 'items');
+
+        // Find nearest subway station for each location
+        const findNearestStation = (lat, lng) => {
+            let nearest = null;
+            let minDist = Infinity;
+            
+            for (const [stopId, stop] of Object.entries(NYC_STOPS)) {
+                const dist = Math.sqrt(Math.pow(stop.lat - lat, 2) + Math.pow(stop.lng - lng, 2));
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = { ...stop, id: stopId };
+                }
+            }
+            
+            // Calculate walking time (roughly 3 mph = 0.05 miles per minute)
+            const walkingMinutes = Math.round(minDist * 69 * 20); // rough estimate
+            return { station: nearest, walkingMinutes: Math.min(walkingMinutes, 15) };
+        };
+
+        // Get subway lines for a station based on stop ID prefix
+        const getSubwayLines = (stopId) => {
+            if (!stopId) return [];
+            const prefix = stopId.charAt(0);
+            const lineMap = {
+                '1': ['1', '2', '3'],
+                '2': ['4', '5', '6'],
+                '3': ['7'],
+                '4': ['N', 'Q', 'R', 'W'],
+                '5': ['B', 'D', 'F', 'M'],
+                '6': ['J', 'Z'],
+                '7': ['G'],
+                'A': ['A', 'C', 'E'],
+                'B': ['B', 'D', 'F', 'M'],
+                'D': ['B', 'D', 'F', 'M'],
+                'F': ['F', 'M'],
+                'G': ['G'],
+                'J': ['J', 'Z'],
+                'L': ['L'],
+                'M': ['M'],
+                'N': ['N', 'Q', 'R', 'W'],
+                'Q': ['N', 'Q', 'R', 'W'],
+                'R': ['N', 'Q', 'R', 'W'],
+                'S': ['S']
+            };
+            return lineMap[prefix] || ['1', '2', '3']; // default to 123
+        };
+
+        // Enrich items with subway info
+        const enrichedItems = items.map(item => {
+            const coords = item.coordinates || { lat: item.lat, lng: item.lng };
+            if (!coords.lat || !coords.lng) return { ...item, nearestStation: null };
+            
+            const { station, walkingMinutes } = findNearestStation(coords.lat, coords.lng);
+            const lines = getSubwayLines(station?.id);
+            
+            return {
+                ...item,
+                coordinates: coords,
+                nearestStation: station ? {
+                    name: station.name,
+                    id: station.id,
+                    lines: lines,
+                    walkingMinutes
+                } : null
+            };
+        });
+
+        // Build prompt for Gemini
+        const itemDescriptions = enrichedItems.map((item, i) => {
+            const stationInfo = item.nearestStation 
+                ? `Nearest subway: ${item.nearestStation.name} (${item.nearestStation.lines.join('/')}) - ${item.nearestStation.walkingMinutes} min walk`
+                : 'No subway nearby';
+            return `${i + 1}. ${item.name} (${item.type || 'place'})
+   - Location: ${item.address || 'NYC'}
+   - ${stationInfo}
+   - Description: ${item.description || 'Popular NYC destination'}
+   - Price: ${item.price || item.priceRange || 'Varies'}`;
+        }).join('\n\n');
+
+        const currentHour = new Date().getHours();
+        const defaultStartTime = requestedStartTime || (currentHour < 12 ? '10:00 AM' : '2:00 PM');
+
+        const prompt = `You are an expert NYC local trip planner. Create a realistic, optimized day itinerary for these spots:
+
+PLACES TO VISIT:
+${itemDescriptions}
+
+START: ${userLocation?.address || 'Midtown Manhattan'}
+TIME: ${defaultStartTime}
+
+CRITICAL RULES:
+1. GEOGRAPHIC OPTIMIZATION: Group nearby locations together. Don't zigzag across Manhattan.
+2. REALISTIC TIMING: 
+   - Restaurants: 45-90 min depending on type (quick lunch vs fine dining)
+   - Landmarks/Museums: 1-3 hours
+   - Events: Match the actual event duration
+   - Add 5-10 min buffer between stops
+3. ACCURATE COSTS (single number, not ranges):
+   - Free landmarks: "$0"
+   - Casual lunch: "$15-25"  
+   - Nice dinner: "$40-60"
+   - Fine dining: "$80+"
+   - Events: Use listed price or "$0" if free
+4. SUBWAY DIRECTIONS: Be precise with actual NYC subway lines and stations
+5. PRESERVE EXACT NAMES: Use the exact place names provided above
+
+Generate JSON:
+{
+  "title": "[Creative 5-7 word title reflecting the day's theme]",
+  "overview": "[One compelling sentence about this unique NYC experience]",
+  "totalDuration": "[X] hours",
+  "totalCost": "$[low]-[high] estimated",
+  "stops": [
+    {
+      "order": 1,
+      "name": "[EXACT name from list above]",
+      "type": "food|landmark|event|activity",
+      "arrivalTime": "10:00 AM",
+      "departureTime": "11:15 AM", 
+      "duration": "1 hr 15 min",
+      "whyVisit": "[Why this place is special - be specific, not generic]",
+      "whatToDo": "[Specific recommendations - dishes to order, exhibits to see]",
+      "proTip": "[Genuine insider knowledge - best seats, secret menu items, timing tricks]",
+      "cost": "$25",
+      "transitToNext": {
+        "method": "subway",
+        "duration": "18 min",
+        "instructions": "Walk 3 min to 23 St station. Take the 1 train downtown to Christopher St. Walk 5 min east.",
+        "subwayLines": ["1"],
+        "fromStation": "23 St",
+        "toStation": "Christopher St"
+      }
+    }
+  ],
+  "tips": [
+    "[Specific tip about navigating this itinerary]",
+    "[Money-saving tip specific to these places]",
+    "[Timing tip based on this route]"
+  ]
+}
+
+FINAL CHECKS:
+- Costs are single numbers like "$25", not ranges like "$20-40"
+- Last stop has transitToNext: null
+- Names match EXACTLY what was provided
+- Route makes geographic sense (no unnecessary backtracking)
+- Meal times are realistic (lunch 11:30am-2pm, dinner 6-9pm)`;
+
+        // Call Gemini API
+        const geminiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { 
+                    temperature: 0.7, 
+                    maxOutputTokens: 4000,
+                    responseMimeType: 'application/json'
+                }
+            })
+        });
+
+        if (!geminiResponse.ok) {
+            const errorText = await geminiResponse.text();
+            console.error('[Detailed Planner] Gemini API error:', errorText);
+            throw new Error('Failed to generate itinerary');
+        }
+
+        const geminiData = await geminiResponse.json();
+        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+        // Parse JSON response
+        let itinerary;
+        try {
+            // Clean up potential markdown code blocks
+            let jsonStr = responseText.trim();
+            if (jsonStr.startsWith('```')) {
+                jsonStr = jsonStr.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+            }
+            itinerary = JSON.parse(jsonStr);
+        } catch (parseErr) {
+            console.error('[Detailed Planner] Failed to parse Gemini response:', responseText);
+            throw new Error('Failed to parse itinerary');
+        }
+
+        // Enrich itinerary stops with coordinates from original items
+        // Use robust matching to find original items
+        const normalizeForMatch = (str) => {
+            return (str || '').toLowerCase()
+                .replace(/[^a-z0-9\s]/g, '')  // Remove special chars
+                .replace(/\b(the|a|an|at|in|on|of|and|for|to)\b/g, '')  // Remove common words
+                .replace(/\s+/g, ' ')
+                .trim();
+        };
+        
+        const findBestMatch = (stopName) => {
+            const normalizedStop = normalizeForMatch(stopName);
+            const stopWords = normalizedStop.split(' ').filter(w => w.length > 2);
+            
+            let bestMatch = null;
+            let bestScore = 0;
+            
+            for (const item of enrichedItems) {
+                const normalizedItem = normalizeForMatch(item.name);
+                const itemWords = normalizedItem.split(' ').filter(w => w.length > 2);
+                
+                // Check direct inclusion
+                if (normalizedItem.includes(normalizedStop) || normalizedStop.includes(normalizedItem)) {
+                    return item;
+                }
+                
+                // Count matching words
+                const matchingWords = stopWords.filter(sw => 
+                    itemWords.some(iw => iw.includes(sw) || sw.includes(iw))
+                );
+                const score = matchingWords.length / Math.max(stopWords.length, 1);
+                
+                if (score > bestScore && score >= 0.5) {  // At least 50% word match
+                    bestScore = score;
+                    bestMatch = item;
+                }
+            }
+            
+            return bestMatch;
+        };
+        
+        itinerary.stops = itinerary.stops.map((stop, index) => {
+            const originalItem = findBestMatch(stop.name);
+            
+            if (originalItem) {
+                console.log(`[Detailed Planner] Matched "${stop.name}" -> "${originalItem.name}"`);
+            } else {
+                console.log(`[Detailed Planner] No match found for "${stop.name}"`);
+            }
+            
+            return {
+                ...stop,
+                id: originalItem?.id || `stop-${stop.order || index + 1}`,
+                coordinates: originalItem?.coordinates || null,
+                nearestStation: originalItem?.nearestStation || null,
+                icon: stop.type === 'food' ? 'fa-utensils' : 
+                      stop.type === 'event' ? 'fa-calendar' : 
+                      stop.type === 'landmark' ? 'fa-landmark' : 'fa-location-dot',
+                iconBg: stop.type === 'food' ? '#ec4899' : 
+                        stop.type === 'event' ? '#8b5cf6' : 
+                        stop.type === 'landmark' ? '#ef4444' : '#3b82f6'
+            };
+        });
+
+        // Calculate budget breakdown - properly parse cost ranges like "$20-40"
+        const budget = {
+            food: 0,
+            activity: 0,
+            transit: 2.90 * Math.max(1, itinerary.stops.length - 1) // $2.90 per subway ride
+        };
+
+        const parseCost = (costStr) => {
+            if (!costStr) return 0;
+            const str = costStr.toString().toLowerCase();
+            if (str === 'free' || str === 'tbd' || str === '$0') return 0;
+            
+            // Handle single values like "$25" first (preferred)
+            const singleMatch = str.match(/\$?(\d+(?:\.\d{2})?)/);
+            if (singleMatch) {
+                return parseFloat(singleMatch[1]);
+            }
+            return 0;
+        };
+
+        itinerary.stops.forEach(stop => {
+            const cost = parseCost(stop.cost);
+            if (stop.type === 'food') {
+                budget.food += cost;
+            } else {
+                budget.activity += cost;
+            }
+        });
+
+        console.log(`[Detailed Planner] Generated itinerary with ${itinerary.stops.length} stops in ${Date.now() - startTime}ms`);
+
+        res.json({
+            success: true,
+            itinerary,
+            budget,
+            totalSpent: budget.food + budget.activity + budget.transit,
+            enrichedItems,
+            took_ms: Date.now() - startTime
+        });
+
+    } catch (error) {
+        console.error('[Detailed Planner] Error:', error);
+        res.status(500).json({ error: 'Failed to build detailed itinerary', message: error.message });
     }
 });
 
