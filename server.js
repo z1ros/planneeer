@@ -3,6 +3,7 @@ import { MongoClient } from 'mongodb';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import { createMatchesRouter } from './routes/matches.js';
 
 dotenv.config();
 
@@ -38,6 +39,8 @@ async function connectDB() {
         nycDb = client.db('nyc');
         nycEventsCollection = nycDb.collection('events_v2');
         nycRestaurantsCollection = nycDb.collection('restaurants');
+
+        app.use('/', createMatchesRouter(nycDb));
 
         const placeCount = await placesCollection.countDocuments();
         const eventCount = await eventsCollection.countDocuments();
