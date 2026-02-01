@@ -44,7 +44,7 @@ async function connectDB() {
         nycRestaurantsCollection = nycDb.collection('restaurants');
         nycLandmarksCollection = nycDb.collection('landmarks');
 
-        app.use('/', createMatchesRouter(nycDb));
+        app.use('/api/matches', createMatchesRouter(nycDb));
 
         const placeCount = await placesCollection.countDocuments();
         const eventCount = await eventsCollection.countDocuments();

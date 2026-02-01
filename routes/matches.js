@@ -64,7 +64,8 @@ function sanitizeUser(user) {
         interestOptions: Array.isArray(user.interestOptions) ? user.interestOptions : [],
         interestFreeText: user.interestFreeText,
         description: user.description,
-        photoUrl: user.photoUrl
+        photoUrl: user.photoUrl,
+        instagram: user.instagram
     };
 }
 
@@ -79,7 +80,84 @@ function buildMatchResponse(candidate, score) {
 
 export function createMatchesRouter(db) {
     const router = express.Router();
-        const usersCollection = db.collection('users');
+    const usersCollection = db.collection('users');
+
+    // Seed test users
+    router.post('/seed-users', async (req, res) => {
+        try {
+            const testUsers = [
+                {
+                    _id: new ObjectId(MASTER_USER_ID),
+                    name: 'Alex',
+                    age: 28,
+                    hometown: 'New York, NY',
+                    interestOptions: ['hiking', 'photography', 'coffee', 'museums', 'food tours'],
+                    description: 'Love exploring new cities and finding hidden gems!',
+                    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'alex_travels'
+                },
+                {
+                    _id: new ObjectId(),
+                    name: 'Sarah Chen',
+                    age: 26,
+                    hometown: 'Boston, MA',
+                    interestOptions: ['hiking', 'photography', 'yoga', 'brunch spots'],
+                    description: 'Adventure seeker and coffee enthusiast. Always planning my next trip!',
+                    photoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'sarahchen.travels'
+                },
+                {
+                    _id: new ObjectId(),
+                    name: 'Marcus Johnson',
+                    age: 31,
+                    hometown: 'Chicago, IL',
+                    interestOptions: ['museums', 'food tours', 'architecture', 'jazz clubs'],
+                    description: 'History buff and foodie. Love discovering local culture.',
+                    photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'marcus.adventures'
+                },
+                {
+                    _id: new ObjectId(),
+                    name: 'Emma Rodriguez',
+                    age: 24,
+                    hometown: 'Miami, FL',
+                    interestOptions: ['beaches', 'nightlife', 'coffee', 'street art'],
+                    description: 'Beach lover and art enthusiast. Living for sunsets and good vibes.',
+                    photoUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'emma.explores'
+                },
+                {
+                    _id: new ObjectId(),
+                    name: 'David Kim',
+                    age: 29,
+                    hometown: 'Seattle, WA',
+                    interestOptions: ['hiking', 'coffee', 'tech meetups', 'bookstores'],
+                    description: 'Software engineer by day, trail explorer by weekend.',
+                    photoUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'davidkim.hikes'
+                },
+                {
+                    _id: new ObjectId(),
+                    name: 'Olivia Thompson',
+                    age: 27,
+                    hometown: 'Austin, TX',
+                    interestOptions: ['live music', 'food tours', 'hiking', 'yoga'],
+                    description: 'Music festival hopper and taco connoisseur.',
+                    photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&h=400&fit=crop&crop=faces&q=80',
+                    instagram: 'olivia.wanderlust'
+                }
+            ];
+
+            // Clear existing users and insert test data
+            await usersCollection.deleteMany({});
+            await usersCollection.insertMany(testUsers);
+
+            return res.json({ message: 'Seeded ' + testUsers.length + ' test users', count: testUsers.length });
+        } catch (error) {
+            console.error('Error seeding users:', error);
+            return res.status(500).json({ error: 'Failed to seed users' });
+        }
+    });
 
     router.get('/get-matches', async (req, res) => {
         try {
