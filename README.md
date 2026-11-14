@@ -2,6 +2,8 @@
 
 Your AI-powered NYC adventure planner with real-time 3D visualization, voice-controlled navigation, and automated reservations.
 
+🏆 **Winner at Hack@Brown 2026**
+
 ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Mapbox](https://img.shields.io/badge/Mapbox-GL_3D-green) ![Gemini](https://img.shields.io/badge/Google-Gemini-orange) ![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice-purple)
 
 ---
@@ -107,6 +109,8 @@ Your AI-powered NYC adventure planner with real-time 3D visualization, voice-con
 
 ## 🚀 Quick Start
 
+**Prerequisites:** Node.js 18+, npm, and a MongoDB Atlas cluster (vector search enabled).
+
 1. **Clone the repo:**
    ```bash
    git clone https://github.com/z1ros/planneeer.git
@@ -116,6 +120,9 @@ Your AI-powered NYC adventure planner with real-time 3D visualization, voice-con
 2. **Install dependencies:**
    ```bash
    npm install
+   
+   # Only needed for automated reservations
+   npx playwright install chromium
    ```
 
 3. **Create `.env` file:**
@@ -140,8 +147,27 @@ Your AI-powered NYC adventure planner with real-time 3D visualization, voice-con
    # Terminal 2: Frontend dev server
    npm run dev
    ```
+   Or start both at once:
+   ```bash
+   npm run dev:all
+   ```
 
 5. **Open in browser:** http://localhost:5173
+
+---
+
+## 📜 Scripts
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Vite dev server (frontend) |
+| `npm run server` | Express API server |
+| `npm run dev:all` | Frontend + backend together |
+| `npm run build` | Type-check and production build |
+| `npm run preview` | Preview the production build |
+| `npm run lint` | Run ESLint |
+
+Database seeding and maintenance scripts live in [`scripts/`](scripts) (e.g. `node scripts/seed_landmarks.cjs`).
 
 ---
 
